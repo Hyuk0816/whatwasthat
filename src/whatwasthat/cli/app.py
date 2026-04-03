@@ -59,28 +59,40 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
         sessions = {session_id: parse_jsonl(file_path)}
 
     total_triples = 0
-    for session_id, turns in sessions.items():
+    total_sessions = len(sessions)
+    for si, (session_id, turns) in enumerate(sessions.items(), 1):
         if not turns:
             continue
-        typer.echo(f"세션 {session_id}: {len(turns)} 턴 처리 중...")
+        typer.echo(f"\n[{si}/{total_sessions}] 세션 {session_id[:12]}... ({len(turns)} 턴)")
 
         # 청킹
         chunks = chunk_turns(turns, session_id=session_id)
+        total_chunks = len(chunks)
+        typer.echo(f"  → {total_chunks}개 청크로 분리")
 
-        for chunk in chunks:
+        for ci, chunk in enumerate(chunks, 1):
+            typer.echo(
+                f"  [{ci}/{total_chunks}] 청크 처리 중... ",
+                nl=False,
+            )
             # 대명사 해소
             resolved = resolve_references(chunk)
             # 트리플 추출
             triples = extract_triples(resolved)
             if not triples:
+                typer.echo("트리플 없음 (스킵)")
                 continue
+            typer.echo(f"{len(triples)}개 트리플 추출")
             # 그래프 저장
             graph.add_triples(session_id, triples)
             # 벡터 저장 (엔티티)
             entities: list[Entity] = []
             seen: set[str] = set()
             for t in triples:
-                for name, etype in [(t.subject, t.subject_type), (t.object, t.object_type)]:
+                for name, etype in [
+                    (t.subject, t.subject_type),
+                    (t.object, t.object_type),
+                ]:
                     if name not in seen:
                         seen.add(name)
                         entities.append(Entity(

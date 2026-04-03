@@ -9,7 +9,7 @@ def chunk_turns(
     turns: list[Turn],
     session_id: str,
     min_turns: int = 3,
-    max_turns: int = 10,
+    max_turns: int = 6,
 ) -> list[Chunk]:
     """Turn 리스트를 Chunk로 분리.
 

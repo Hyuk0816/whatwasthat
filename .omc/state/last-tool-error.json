@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"uv run ruff check --fix src/ tests/ 2>&1\",\"description\":\"Auto-fix ruff lint issues\"}",
-  "error": "Exit code 1\nE501 Line too long (101 > 100)\n   --> src/whatwasthat/cli/app.py:122:101\n    |\n120 |         for triple in result.triples[:5]:\n121 |             temporal_tag = f\" [{triple.temporal}]\" if triple.temporal else \"\"\n122 |             typer.echo(f\"     {triple.subject} —[{triple.predicate}]→ {triple.object}{temporal_tag}\")\n    |                                                                                                     ^\n123 |         typer.echo()\n    |\n\nE501 Line too long (126 > 1...",
-  "timestamp": "2026-04-03T01:59:12.990Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"which ollama 2>/dev/null; brew list ollama 2>/dev/null\",\"description\":\"Check if ollama is installed\"}",
+  "error": "Exit code 1\nollama not found",
+  "timestamp": "2026-04-03T02:31:23.452Z",
+  "retry_count": 1
 }
