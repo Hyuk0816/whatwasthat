@@ -1,0 +1,44 @@
+[project]
+name = "whatwasthat"
+version = "0.1.0"
+description = "AI 대화 기억 솔루션 - LLM 대화를 Knowledge Graph로 변환"
+requires-python = ">=3.12"
+license = "MIT"
+
+dependencies = [
+    "typer>=0.15",
+    "kuzu>=0.9",
+    "chromadb>=0.6",
+    "ollama>=0.4",
+    "sentence-transformers>=3.3",
+    "pydantic>=2.10",
+    "mcp>=1.0",
+]
+
+[project.scripts]
+wwt = "whatwasthat.cli.app:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whatwasthat"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
