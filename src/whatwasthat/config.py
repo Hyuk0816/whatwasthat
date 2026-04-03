@@ -9,7 +9,7 @@ WWT_DATA_DIR = WWT_HOME / "data"
 KUZU_DB_PATH = WWT_DATA_DIR / "graph"
 CHROMA_DB_PATH = WWT_DATA_DIR / "vector"
 
-OLLAMA_MODEL = "sciphi/triplex"
+OLLAMA_MODEL = "qwen3.5:4b"
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 

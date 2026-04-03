@@ -91,26 +91,26 @@
   "hotPaths": [
     {
       "path": "src/whatwasthat/pipeline/extractor.py",
-      "accessCount": 3,
-      "lastAccessed": 1775190005904,
+      "accessCount": 4,
+      "lastAccessed": 1775193237906,
       "type": "file"
     },
     {
       "path": "tests/test_pipeline/test_extractor.py",
-      "accessCount": 3,
-      "lastAccessed": 1775190017179,
+      "accessCount": 4,
+      "lastAccessed": 1775193274114,
       "type": "file"
     },
     {
       "path": "src/whatwasthat/config.py",
-      "accessCount": 2,
-      "lastAccessed": 1775189799094,
+      "accessCount": 3,
+      "lastAccessed": 1775193204686,
       "type": "file"
     },
     {
       "path": "src/whatwasthat/pipeline/prompts.py",
-      "accessCount": 2,
-      "lastAccessed": 1775189823172,
+      "accessCount": 3,
+      "lastAccessed": 1775193218878,
       "type": "file"
     }
   ],
