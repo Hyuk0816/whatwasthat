@@ -1,0 +1,6 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"test-session-001"}
+{"type":"system","message":{"role":"system","content":"System prompt..."}}
+{"type":"user","message":{"role":"user","content":"FastAPI 대신 Flask 쓰자"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","text":"생각 중..."},{"type":"text","text":"FastAPI가 async 지원이 좋으니 유지하는 게 어떨까요?"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"그래 FastAPI로 하자"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"좋습니다. FastAPI로 진행하겠습니다."},{"type":"tool_use","id":"tool1","name":"Write","input":{}}]}}
