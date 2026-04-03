@@ -93,10 +93,11 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
                     (t.subject, t.subject_type),
                     (t.object, t.object_type),
                 ]:
-                    if name not in seen:
-                        seen.add(name)
+                    eid = name.lower().replace(" ", "_")
+                    if eid not in seen:
+                        seen.add(eid)
                         entities.append(Entity(
-                            id=f"{name[:8].lower().replace(' ', '_')}",
+                            id=eid,
                             name=name, type=etype,
                         ))
             vector.upsert_entities(entities)
