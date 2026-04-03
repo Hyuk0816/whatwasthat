@@ -6,7 +6,7 @@ from pathlib import Path
 
 import kuzu
 
-from whatwasthat.models import Entity, Session, Triple
+from whatwasthat.models import Session, Triple
 
 
 class GraphStore:

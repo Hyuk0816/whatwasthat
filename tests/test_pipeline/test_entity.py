@@ -1,5 +1,5 @@
-from whatwasthat.pipeline.entity import resolve_entity
 from whatwasthat.models import Entity
+from whatwasthat.pipeline.entity import resolve_entity
 
 
 class TestResolveEntity:

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from whatwasthat.pipeline.parser import parse_jsonl
 from whatwasthat.models import Turn
+from whatwasthat.pipeline.parser import parse_jsonl
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 

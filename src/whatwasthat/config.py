@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-
 WWT_HOME = Path.home() / ".wwt"
 WWT_DATA_DIR = WWT_HOME / "data"
 KUZU_DB_PATH = WWT_DATA_DIR / "graph"

@@ -38,13 +38,13 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
     config = _get_config()
     file_path = Path(path).expanduser()
 
-    from whatwasthat.pipeline.parser import parse_jsonl, parse_session_dir
+    from whatwasthat.models import Entity
     from whatwasthat.pipeline.chunker import chunk_turns
-    from whatwasthat.pipeline.resolver import resolve_references
     from whatwasthat.pipeline.extractor import extract_triples
+    from whatwasthat.pipeline.parser import parse_jsonl, parse_session_dir
+    from whatwasthat.pipeline.resolver import resolve_references
     from whatwasthat.storage.graph import GraphStore
     from whatwasthat.storage.vector import VectorStore
-    from whatwasthat.models import Entity
 
     graph = GraphStore(config.kuzu_path)
     graph.initialize()
@@ -98,9 +98,9 @@ def search(query: str = typer.Argument(help="검색 쿼리")) -> None:
     """과거 대화에서 관련 기억 검색."""
     config = _get_config()
 
+    from whatwasthat.search.engine import SearchEngine
     from whatwasthat.storage.graph import GraphStore
     from whatwasthat.storage.vector import VectorStore
-    from whatwasthat.search.engine import SearchEngine
 
     graph = GraphStore(config.kuzu_path)
     graph.initialize()
@@ -119,7 +119,8 @@ def search(query: str = typer.Argument(help="검색 쿼리")) -> None:
         typer.echo(f"  {i}. 세션 {result.session_id} (점수: {result.score:.2f})")
         for triple in result.triples[:5]:
             temporal_tag = f" [{triple.temporal}]" if triple.temporal else ""
-            typer.echo(f"     {triple.subject} —[{triple.predicate}]→ {triple.object}{temporal_tag}")
+            line = f"     {triple.subject} —[{triple.predicate}]→ {triple.object}"
+            typer.echo(f"{line}{temporal_tag}")
         typer.echo()
 
 

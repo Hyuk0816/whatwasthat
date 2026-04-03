@@ -1,5 +1,5 @@
-from whatwasthat.pipeline.resolver import resolve_references
 from whatwasthat.models import Chunk, Turn
+from whatwasthat.pipeline.resolver import resolve_references
 
 
 def _make_chunk(conversations: list[tuple[str, str]]) -> Chunk:

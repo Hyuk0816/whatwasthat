@@ -1,7 +1,7 @@
 """graph 모듈 테스트."""
 
+from whatwasthat.models import Triple
 from whatwasthat.storage.graph import GraphStore
-from whatwasthat.models import Triple, Entity
 
 
 class TestGraphStore:

@@ -1,8 +1,8 @@
 """트리플 추출 - Chunk에서 Knowledge Graph 트리플을 추출."""
 
 import json
-import re
 import logging
+import re
 
 import ollama
 

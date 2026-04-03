@@ -1,7 +1,7 @@
 """vector 모듈 테스트."""
 
-from whatwasthat.storage.vector import VectorStore
 from whatwasthat.models import Entity
+from whatwasthat.storage.vector import VectorStore
 
 
 class TestVectorStore:

@@ -1,9 +1,9 @@
 """search engine 모듈 테스트."""
 
+from whatwasthat.models import Entity, Triple
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.graph import GraphStore
 from whatwasthat.storage.vector import VectorStore
-from whatwasthat.models import Triple, Entity
 
 
 class TestSearchEngine:

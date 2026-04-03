@@ -1,5 +1,5 @@
+from whatwasthat.models import Turn
 from whatwasthat.pipeline.chunker import chunk_turns
-from whatwasthat.models import Turn, Chunk
 
 
 def _make_turns(contents: list[tuple[str, str]]) -> list[Turn]:
