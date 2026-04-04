@@ -5,6 +5,9 @@ from collections import defaultdict
 from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
 
+# 최소 유사도 점수 — 이 이하는 관련 없는 결과로 간주
+_MIN_SCORE = 0.3
+
 
 class SearchEngine:
     """벡터 시맨틱 검색 + 세션 그루핑."""
@@ -19,6 +22,11 @@ class SearchEngine:
         top_k: int = 10,
     ) -> list[SearchResult]:
         hits = self._vector.search(query, top_k=top_k, project=project)
+        if not hits:
+            return []
+
+        # 최소 점수 필터
+        hits = [(cid, score, meta) for cid, score, meta in hits if score >= _MIN_SCORE]
         if not hits:
             return []
 

@@ -3,7 +3,9 @@
 from pathlib import Path
 
 import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
+from whatwasthat.config import EMBEDDING_MODEL
 from whatwasthat.models import Chunk
 
 
@@ -12,17 +14,20 @@ class VectorStore:
 
     COLLECTION_NAME = "wwt_chunks"
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, model_name: str = EMBEDDING_MODEL) -> None:
         self._db_path = db_path
+        self._model_name = model_name
         self._client: chromadb.PersistentClient | None = None
         self._collection: chromadb.Collection | None = None
 
     def initialize(self) -> None:
         self._db_path.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._db_path))
+        ef = SentenceTransformerEmbeddingFunction(model_name=self._model_name)
         self._collection = self._client.get_or_create_collection(
             name=self.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
+            embedding_function=ef,
         )
 
     def _get_collection(self) -> chromadb.Collection:
