@@ -1,43 +1,27 @@
-# Agent Context - WWT Phase 1 PoC 구현
+# Agent Context — Vector Migration
 
 ## 작업 목적
-whatwasthat (WWT) Phase 1 PoC 구현. 대화 로그 1개로 전체 파이프라인 관통.
+WWT 프로젝트를 Triple 추출 방식에서 청크 벡터화 방식으로 전환 중.
+설계 문서: docs/plans/2026-04-05-vector-migration-design.md
+구현 계획: docs/plans/2026-04-05-vector-migration-impl.md
 
 ## 프로젝트 개요
-- AI 대화 기억 솔루션: LLM 대화를 Knowledge Graph로 변환
-- CLI 명령어: `wwt`, PyPI: `whatwasthat`
+- AI 대화 기억 검색: LLM 대화 로그를 벡터화하여 시맨틱 검색
+- CLI: `wwt`, PyPI: `whatwasthat`
 - Python 3.12+, uv 패키지 매니저
-
-## 기술 스택
-- LLM: Qwen3.5 4B via Ollama (`ollama` 패키지)
-- 임베딩: paraphrase-multilingual-MiniLM-L12-v2 (`sentence-transformers`)
-- 그래프 DB: Kuzu (`kuzu`)
-- 벡터 DB: ChromaDB (`chromadb`)
-- CLI: `typer`
-- 데이터 모델: `pydantic` BaseModel
-- 빌드: `hatchling`
 
 ## 코딩 컨벤션
 - Python 3.12+ 문법
 - snake_case (변수/함수), PascalCase (클래스)
-- type hints 필수 (`any` 타입 사용 금지)
+- type hints 필수 (`any` 타입 사용 금지, 구체적 타입 사용)
 - pydantic BaseModel로 데이터 모델
 - TDD: 테스트 먼저 작성 → 실패 확인 → 구현 → 통과 확인
 - 테스트 실행: `cd /Users/hyuk/PycharmProjects/whatwasthat && uv run pytest <path> -v`
+- ruff lint: line-length=100, target py312
 - **git commit 하지 마세요** — 컨트롤러가 일괄 커밋합니다
 
-## 핵심 데이터 모델 (src/whatwasthat/models.py — 이미 존재, 수정 금지)
-- Turn: role(str), content(str), timestamp(datetime | None)
-- Chunk: id(str), session_id(str), turns(list[Turn]), raw_text(str), timestamp(datetime | None)
-- Triple: subject(str), subject_type(str), predicate(str), object(str), object_type(str), temporal(str | None), confidence(float)
-- Entity: id(str), name(str), type(str), aliases(list[str]), created_at(datetime), updated_at(datetime)
-- Session: id(str), source(str), created_at(datetime), summary(str)
-- SearchResult: session_id(str), triples(list[Triple]), summary(str), score(float)
-
-## 현재 완료된 Task
-- Task 1: Parser (parser.py) ✅ — JSONL → Turn 리스트 변환
-
-## 병렬 실행 주의사항
-- 각 에이전트는 자기 파일만 수정 (다른 에이전트 파일 수정 금지)
-- models.py, config.py, conftest.py 수정 금지
-- git commit 하지 마세요
+## 핵심 변경 방향
+- Ollama LLM 호출 제거 (트리플 추출 삭제)
+- Kuzu 그래프 DB 제거
+- ChromaDB에 청크 원문 + 메타데이터 직접 저장
+- 검색: 벡터 시맨틱 → 세션별 그루핑 → 청크 원문 반환

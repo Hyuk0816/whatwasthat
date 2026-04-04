@@ -10,10 +10,12 @@ def _make_turns(contents: list[tuple[str, str]]) -> list[Turn]:
 
 _LONG_USER = ("우리 프로젝트에서 DB는 PostgreSQL 대신 Kuzu를 선택했어. "
               "그래프 쿼리가 빨라서 임베딩은 ChromaDB로 저장하기로 했고. "
-              "모델은 Qwen 3.5 4B를 사용하고, 파이프라인은 파서-청커-추출기-저장소 순서로 구성했어.")
+              "모델은 Qwen 3.5 4B를 사용하고, "
+              "파이프라인은 파서-청커-추출기-저장소 순서로 구성했어.")
 _LONG_ASST = ("좋은 선택입니다. Kuzu는 임베디드 그래프 DB라 설치 없이 사용 가능하고, "
               "ChromaDB는 벡터 검색에 최적화되어 있습니다. "
-              "Qwen 3.5 4B는 한국어 지원이 괜찮고 4GB RAM이면 충분합니다. 파이프라인 구조도 합리적입니다.")
+              "Qwen 3.5 4B는 한국어 지원이 괜찮고 "
+              "4GB RAM이면 충분합니다. 파이프라인 구조도 합리적입니다.")
 
 
 class TestChunkTurns:

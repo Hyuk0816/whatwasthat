@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"uv run ruff check src/ tests/ 2>&1 && git add -A && git commit -m \\\"$(cat <<'EOF'\\nfeat(extractor): Triplex 모델로 전환 — 속도 18x 개선\\n\\n- Qwen 3.5 4B → sciphi/triplex (KG 트리플 추출 전용 모델)\\n- 프롬프트: ...",
-  "error": "Exit code 1\nE501 Line too long (101 > 100)\n  --> src/whatwasthat/pipeline/extractor.py:31:98\n   |\n30 |     엔티티: '[1], TECHNOLOGY:FastAPI' → {'id': '1', 'type': 'Technology', 'name': 'FastAPI'}\n31 |     트리플: '[1] CHOSEN_OVER [2]' → {'subject_id': '1', 'predicate': 'CHOSEN_OVER', 'object_id': '2'}\n   |                                                                                                     ^\n32 |     \"\"\"\n33 |     entry = entry.strip()\n   |\n\nI001 [*] Import block is un-sorted or un-forma...",
-  "timestamp": "2026-04-03T04:19:41.590Z",
-  "retry_count": 1
+  "tool_input_preview": "{\"command\":\"uv run ruff check --fix src/ tests/ 2>&1\",\"description\":\"Auto-fix ruff import sorting\"}",
+  "error": "Exit code 1\nE501 Line too long (101 > 100)\n  --> tests/test_pipeline/test_chunker.py:13:70\n   |\n11 | _LONG_USER = (\"우리 프로젝트에서 DB는 PostgreSQL 대신 Kuzu를 선택했어. \"\n12 |               \"그래프 쿼리가 빨라서 임베딩은 ChromaDB로 저장하기로 했고. \"\n13 |               \"모델은 Qwen 3.5 4B를 사용하고, 파이프라인은 파서-청커-추출기-저장소 순서로 구성했어.\")\n   |                                                                                                     ^\n14 | _LONG_ASST = (\"좋은 선택입니다. Kuzu는 임베디드 그래프 DB라 설치 없이 사용 가능하고, \"\n15 |               \"ChromaDB는 벡터 검...",
+  "timestamp": "2026-04-04T15:26:48.791Z",
+  "retry_count": 2
 }

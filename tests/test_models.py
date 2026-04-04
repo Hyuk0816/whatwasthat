@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from whatwasthat.models import Chunk, SessionMeta, SearchResult
+from whatwasthat.models import Chunk, SearchResult, SessionMeta
 
 
 class TestSessionMeta:

@@ -1,15 +1,13 @@
 [project]
 name = "whatwasthat"
-version = "0.1.0"
-description = "AI 대화 기억 솔루션 - LLM 대화를 Knowledge Graph로 변환"
+version = "0.2.0"
+description = "AI 대화 기억 검색 — LLM 대화 로그를 벡터화하여 시맨틱 검색"
 requires-python = ">=3.12"
 license = "MIT"
 
 dependencies = [
     "typer>=0.15",
-    "kuzu>=0.9",
     "chromadb>=0.6",
-    "ollama>=0.4",
     "sentence-transformers>=3.3",
     "pydantic>=2.10",
     "mcp>=1.0",
@@ -38,9 +36,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-
-[tool.ruff.lint.per-file-ignores]
-"src/whatwasthat/pipeline/prompts.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
