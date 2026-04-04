@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from whatwasthat.models import Turn
-from whatwasthat.pipeline.parser import parse_jsonl
+from whatwasthat.pipeline.parser import parse_jsonl, parse_session_meta
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -9,7 +9,8 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 class TestParseJsonl:
     def test_parse_extracts_user_and_assistant_turns(self):
         turns = parse_jsonl(FIXTURES / "sample_session.jsonl")
-        assert len(turns) == 4  # user, assistant, user, assistant (system/permission 제외)
+        # user, assistant, user (마지막 assistant는 짧은 상태 메시지라 필터됨)
+        assert len(turns) == 3
         assert turns[0].role == "user"
         assert turns[0].content == "FastAPI 대신 Flask 쓰자"
 
@@ -33,3 +34,17 @@ class TestParseJsonl:
     def test_parse_returns_turn_instances(self):
         turns = parse_jsonl(FIXTURES / "sample_session.jsonl")
         assert all(isinstance(t, Turn) for t in turns)
+
+
+class TestParseSessionMeta:
+    def test_extracts_session_meta(self):
+        meta = parse_session_meta(FIXTURES / "sample_session.jsonl")
+        assert meta is not None
+        assert meta.session_id == "test-session-001"
+        assert meta.project == "TestProject"
+        assert meta.git_branch == "main"
+
+    def test_meta_from_empty_file(self, tmp_path):
+        empty = tmp_path / "empty.jsonl"
+        empty.write_text("")
+        assert parse_session_meta(empty) is None

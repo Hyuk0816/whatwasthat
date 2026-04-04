@@ -21,44 +21,28 @@ class Chunk(BaseModel):
     turns: list[Turn]
     raw_text: str
     timestamp: datetime | None = None
+    project: str = ""
+    project_path: str = ""
+    git_branch: str = ""
 
 
-class Triple(BaseModel):
-    """Knowledge Graph 트리플."""
+class SessionMeta(BaseModel):
+    """세션 메타데이터."""
 
-    subject: str
-    subject_type: str
-    predicate: str
-    object: str
-    object_type: str
-    temporal: str | None = None
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-
-
-class Entity(BaseModel):
-    """그래프 엔티티 노드."""
-
-    id: str
-    name: str
-    type: str
-    aliases: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
-
-
-class Session(BaseModel):
-    """대화 세션."""
-
-    id: str
-    source: str
-    created_at: datetime
-    summary: str = ""
+    session_id: str
+    project: str
+    project_path: str
+    git_branch: str
+    started_at: datetime
+    turn_count: int = 0
 
 
 class SearchResult(BaseModel):
     """검색 결과."""
 
     session_id: str
-    triples: list[Triple]
+    chunks: list[Chunk]
     summary: str
     score: float = Field(ge=0.0, le=1.0)
+    project: str = ""
+    git_branch: str = ""
