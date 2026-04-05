@@ -7,18 +7,22 @@ from whatwasthat.models import Chunk, SessionMeta, Turn
 # 최소 raw_text 길이 — 너무 짧은 청크는 추출할 게 없음
 _MIN_CHUNK_CHARS = 200
 
+# 기본 오버랩 턴 수
+_DEFAULT_OVERLAP = 2
+
 
 def chunk_turns(
     turns: list[Turn],
     session_id: str,
-    min_turns: int = 3,
+    min_turns: int = 2,
     max_turns: int = 6,
+    overlap: int = _DEFAULT_OVERLAP,
     meta: SessionMeta | None = None,
 ) -> list[Chunk]:
-    """Turn 리스트를 Chunk로 분리.
+    """Turn 리스트를 오버랩 슬라이딩 윈도우로 Chunk 분리.
 
-    PoC: max_turns 기준 슬라이딩 윈도우. 고급 주제 감지는 Phase 3.
-    meta가 있으면 각 Chunk에 project/project_path/git_branch를 전파.
+    overlap만큼 이전 청크와 턴을 겹쳐서 맥락을 보존한다.
+    예: max_turns=6, overlap=2 → [0:6], [4:10], [8:14]
     """
     if not turns:
         return []
@@ -27,11 +31,13 @@ def chunk_turns(
     project_path = meta.project_path if meta else ""
     git_branch = meta.git_branch if meta else ""
 
+    step = max(1, max_turns - overlap)
     chunks: list[Chunk] = []
-    for i in range(0, len(turns), max_turns):
+    for i in range(0, len(turns), step):
         batch = turns[i : i + max_turns]
+        if len(batch) < min_turns:
+            continue
         raw_text = "\n".join(f"[{t.role}]: {t.content}" for t in batch)
-        # user 턴이 없거나 텍스트가 너무 짧으면 스킵
         has_user = any(t.role == "user" for t in batch)
         if not has_user or len(raw_text) < _MIN_CHUNK_CHARS:
             continue

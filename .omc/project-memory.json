@@ -91,8 +91,14 @@
   "hotPaths": [
     {
       "path": "src/whatwasthat/storage/vector.py",
-      "accessCount": 13,
-      "lastAccessed": 1775397156927,
+      "accessCount": 15,
+      "lastAccessed": 1775398304199,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_pipeline/test_chunker.py",
+      "accessCount": 9,
+      "lastAccessed": 1775397931666,
       "type": "file"
     },
     {
@@ -102,15 +108,15 @@
       "type": "file"
     },
     {
-      "path": "week_work/APR_1st/work-plan.md",
-      "accessCount": 6,
-      "lastAccessed": 1775396018651,
+      "path": "src/whatwasthat/pipeline/chunker.py",
+      "accessCount": 7,
+      "lastAccessed": 1775397871708,
       "type": "file"
     },
     {
-      "path": "tests/test_pipeline/test_chunker.py",
-      "accessCount": 5,
-      "lastAccessed": 1775316425634,
+      "path": "week_work/APR_1st/work-plan.md",
+      "accessCount": 6,
+      "lastAccessed": 1775396018651,
       "type": "file"
     },
     {
@@ -153,12 +159,6 @@
       "path": "tests/test_pipeline/test_parser.py",
       "accessCount": 3,
       "lastAccessed": 1775316024949,
-      "type": "file"
-    },
-    {
-      "path": "src/whatwasthat/pipeline/chunker.py",
-      "accessCount": 3,
-      "lastAccessed": 1775316053056,
       "type": "file"
     },
     {

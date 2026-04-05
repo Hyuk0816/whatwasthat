@@ -125,14 +125,16 @@ class VectorStore:
         if collection.count() == 0:
             return []
 
+        # 후보 풀 크기 — 벡터/BM25 각각 top_k*3을 가져와서 합집합
+        candidate_k = min(top_k * 3, collection.count())
+
         # 1. 벡터 검색
-        actual_k = min(top_k, collection.count())
         where = {"project": project} if project else None
         vec_results = collection.query(
             query_texts=[query],
-            n_results=actual_k,
+            n_results=candidate_k,
             where=where,
-            include=["metadatas", "documents", "distances"],
+            include=["metadatas", "distances"],
         )
 
         vec_scores: dict[str, float] = {}
@@ -146,25 +148,28 @@ class VectorStore:
                 vec_scores[chunk_id] = max(0.0, 1.0 - distance)
                 vec_metas[chunk_id] = meta
 
-        # 2. BM25 검색
+        # 2. BM25 검색 — 상위 candidate_k개만 사용
         bm25_scores: dict[str, float] = {}
         if self._bm25 and self._bm25_ids:
             query_tokens = _tokenize(query)
             if query_tokens:
                 raw_scores = self._bm25.get_scores(query_tokens)
                 max_bm25 = max(raw_scores) if max(raw_scores) > 0 else 1.0
-                for i, score in enumerate(raw_scores):
-                    cid = self._bm25_ids[i]
-                    meta = self._bm25_metas[i] if i < len(self._bm25_metas) else {}
-                    # 프로젝트 필터 적용
+                import numpy as np
+                top_indices = np.argsort(raw_scores)[-candidate_k:][::-1]
+                for idx in top_indices:
+                    score = raw_scores[idx]
+                    if score <= 0:
+                        break
+                    cid = self._bm25_ids[idx]
+                    meta = self._bm25_metas[idx] if idx < len(self._bm25_metas) else {}
                     if project and meta.get("project") != project:
                         continue
-                    if score > 0:
-                        bm25_scores[cid] = score / max_bm25
-                        if cid not in vec_metas:
-                            vec_metas[cid] = meta
+                    bm25_scores[cid] = score / max_bm25
+                    if cid not in vec_metas:
+                        vec_metas[cid] = meta
 
-        # 3. 하이브리드 점수 결합
+        # 3. 하이브리드 점수 결합 — 합집합의 양쪽 점수 결합
         all_ids = set(vec_scores.keys()) | set(bm25_scores.keys())
         combined: list[tuple[str, float, dict]] = []
         for cid in all_ids:

@@ -86,3 +86,38 @@ class TestChunkMetadata:
                             ("user", "그래 그렇게 하자.")])
         chunks = chunk_turns(turns, session_id="s1")
         assert chunks[0].project == ""
+
+
+class TestChunkOverlap:
+    def test_overlap_creates_more_chunks(self):
+        """오버랩이 있으면 겹치는 부분 때문에 청크가 더 많이 생성됨."""
+        turns = _make_turns([
+            ("user", f"기술 결정 메시지 {i} — 충분히 긴 내용입니다 긴 내용")
+            for i in range(12)
+        ])
+        no_overlap = chunk_turns(turns, session_id="s1", max_turns=6, overlap=0)
+        with_overlap = chunk_turns(turns, session_id="s1", max_turns=6, overlap=2)
+        assert len(with_overlap) >= len(no_overlap)
+
+    def test_overlap_shares_turns(self):
+        """인접 청크가 오버랩 턴을 공유함."""
+        turns = _make_turns([
+            ("user", f"기술 결정 메시지 번호 {i} — 충분히 긴 내용입니다 긴 내용")
+            for i in range(12)
+        ])
+        chunks = chunk_turns(turns, session_id="s1", max_turns=6, overlap=2)
+        if len(chunks) >= 2:
+            # 첫 번째 청크의 마지막 2턴 == 두 번째 청크의 첫 2턴
+            last_2 = chunks[0].turns[-2:]
+            first_2 = chunks[1].turns[:2]
+            assert last_2[0].content == first_2[0].content
+            assert last_2[1].content == first_2[1].content
+
+    def test_zero_overlap_same_as_before(self):
+        """overlap=0이면 기존 동작과 동일."""
+        turns = _make_turns([
+            ("user", f"기술 결정 메시지 {i} — 충분히 긴 내용입니다 긴 내용")
+            for i in range(12)
+        ])
+        chunks = chunk_turns(turns, session_id="s1", max_turns=6, overlap=0)
+        assert len(chunks) == 2
