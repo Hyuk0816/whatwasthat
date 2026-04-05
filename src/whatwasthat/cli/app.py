@@ -141,30 +141,41 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
         sessions = parse_session_dir(file_path)
         meta_map = {
             f.stem: parse_session_meta(f)
-            for f in sorted(file_path.glob("*.jsonl"))
+            for f in sorted(file_path.rglob("*.jsonl"))
         }
     else:
         session_id = file_path.stem
         sessions = {session_id: parse_jsonl(file_path)}
         meta_map = {session_id: parse_session_meta(file_path)}
 
-    total_chunks = 0
+    # 1단계: 파싱 + 청킹 (빠름)
+    all_chunks: list = []
+    session_count = 0
+    total = len(sessions)
     for si, (session_id, turns) in enumerate(sessions.items(), 1):
         if not turns:
             continue
         meta = meta_map.get(session_id)
-        project_label = meta.project if meta else session_id[:12]
-        typer.echo(f"\n[{si}/{len(sessions)}] {project_label} ({len(turns)} 턴)")
-
         chunks = chunk_turns(turns, session_id=session_id, meta=meta)
-        if not chunks:
-            typer.echo("  → 유효한 청크 없음 (스킵)")
-            continue
-        typer.echo(f"  → {len(chunks)}개 청크 벡터화")
-        vector.upsert_chunks(chunks)
-        total_chunks += len(chunks)
+        if chunks:
+            all_chunks.extend(chunks)
+            session_count += 1
+        if si % 50 == 0 or si == total:
+            typer.echo(f"  파싱: {si}/{total} 세션, {len(all_chunks)} 청크")
 
-    typer.echo(f"\n완료: {len(sessions)} 세션, {total_chunks} 청크 저장")
+    if not all_chunks:
+        typer.echo("적재할 청크가 없습니다.")
+        return
+
+    # 2단계: 배치 upsert (임베딩 한 번에 처리)
+    batch_size = 100
+    typer.echo(f"\n벡터화: {len(all_chunks)} 청크 ({session_count} 세션)")
+    for i in range(0, len(all_chunks), batch_size):
+        batch = all_chunks[i : i + batch_size]
+        vector.upsert_chunks(batch)
+        typer.echo(f"  [{i + len(batch)}/{len(all_chunks)}]")
+
+    typer.echo(f"\n완료: {session_count} 세션, {len(all_chunks)} 청크 저장")
 
 
 @app.command()

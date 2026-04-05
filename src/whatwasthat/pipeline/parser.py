@@ -109,9 +109,9 @@ def parse_jsonl(file_path: Path) -> list[Turn]:
 
 
 def parse_session_dir(session_dir: Path) -> dict[str, list[Turn]]:
-    """디렉토리 내 모든 JSONL 세션 파일을 파싱."""
+    """디렉토리 내 모든 JSONL 세션 파일을 재귀적으로 파싱."""
     results: dict[str, list[Turn]] = {}
-    for jsonl_file in sorted(session_dir.glob("*.jsonl")):
+    for jsonl_file in sorted(session_dir.rglob("*.jsonl")):
         session_id = jsonl_file.stem
         results[session_id] = parse_jsonl(jsonl_file)
     return results
