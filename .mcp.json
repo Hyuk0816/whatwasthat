@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "whatwasthat": {
+      "command": "uv",
+      "args": ["--directory", "/Users/hyuk/PycharmProjects/whatwasthat", "run", "wwt-mcp"]
+    }
+  }
+}
