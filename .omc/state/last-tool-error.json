@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"uv run ruff check --fix src/ tests/ 2>&1\",\"description\":\"Auto-fix ruff import sorting\"}",
-  "error": "Exit code 1\nE501 Line too long (101 > 100)\n  --> tests/test_pipeline/test_chunker.py:13:70\n   |\n11 | _LONG_USER = (\"우리 프로젝트에서 DB는 PostgreSQL 대신 Kuzu를 선택했어. \"\n12 |               \"그래프 쿼리가 빨라서 임베딩은 ChromaDB로 저장하기로 했고. \"\n13 |               \"모델은 Qwen 3.5 4B를 사용하고, 파이프라인은 파서-청커-추출기-저장소 순서로 구성했어.\")\n   |                                                                                                     ^\n14 | _LONG_ASST = (\"좋은 선택입니다. Kuzu는 임베디드 그래프 DB라 설치 없이 사용 가능하고, \"\n15 |               \"ChromaDB는 벡터 검...",
-  "timestamp": "2026-04-04T15:26:48.791Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"uv run pytest tests/test_storage/test_vector.py tests/test_search/test_engine.py -q 2>&1\",\"description\":\"Run vector + engine tests\"}",
+  "error": "Exit code 1\n.....F...                                                                [100%]\n=================================== FAILURES ===================================\n_________________ TestSearchEngine.test_search_returns_results _________________\n\nself = <test_search.test_engine.TestSearchEngine object at 0x109190b30>\ntmp_data_dir = PosixPath('/private/var/folders/gw/22cb0sws0413q_v_sqp71mp00000gn/T/pytest-of-hyuk/pytest-46/test_search_returns_results1/wwt_test')\n\n    def test_search_retu...",
+  "timestamp": "2026-04-05T13:35:14.267Z",
+  "retry_count": 1
 }

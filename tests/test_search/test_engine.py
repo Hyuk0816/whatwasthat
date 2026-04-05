@@ -20,7 +20,7 @@ class TestSearchEngine:
                   project="myproject", git_branch="main"),
         ]
         vector.upsert_chunks(chunks)
-        results = engine.search("데이터베이스")
+        results = engine.search("Kuzu DB 선택")
         assert len(results) > 0
         assert results[0].session_id == "s1"
         assert results[0].project == "myproject"

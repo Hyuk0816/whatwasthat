@@ -90,6 +90,24 @@
   },
   "hotPaths": [
     {
+      "path": "src/whatwasthat/search/engine.py",
+      "accessCount": 7,
+      "lastAccessed": 1775316893197,
+      "type": "file"
+    },
+    {
+      "path": "src/whatwasthat/storage/vector.py",
+      "accessCount": 7,
+      "lastAccessed": 1775396090118,
+      "type": "file"
+    },
+    {
+      "path": "week_work/APR_1st/work-plan.md",
+      "accessCount": 6,
+      "lastAccessed": 1775396018651,
+      "type": "file"
+    },
+    {
       "path": "tests/test_pipeline/test_chunker.py",
       "accessCount": 5,
       "lastAccessed": 1775316425634,
@@ -120,6 +138,12 @@
       "type": "file"
     },
     {
+      "path": "tests/test_search/test_engine.py",
+      "accessCount": 4,
+      "lastAccessed": 1775396142451,
+      "type": "file"
+    },
+    {
       "path": "tests/test_pipeline/test_parser.py",
       "accessCount": 3,
       "lastAccessed": 1775316024949,
@@ -129,24 +153,6 @@
       "path": "src/whatwasthat/pipeline/chunker.py",
       "accessCount": 3,
       "lastAccessed": 1775316053056,
-      "type": "file"
-    },
-    {
-      "path": "src/whatwasthat/storage/vector.py",
-      "accessCount": 3,
-      "lastAccessed": 1775316208640,
-      "type": "file"
-    },
-    {
-      "path": "src/whatwasthat/search/engine.py",
-      "accessCount": 3,
-      "lastAccessed": 1775316218472,
-      "type": "file"
-    },
-    {
-      "path": "week_work/APR_1st/work-plan.md",
-      "accessCount": 2,
-      "lastAccessed": 1775315408418,
       "type": "file"
     },
     {
@@ -171,12 +177,6 @@
       "path": "tests/test_storage/test_vector.py",
       "accessCount": 2,
       "lastAccessed": 1775316229500,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_search/test_engine.py",
-      "accessCount": 2,
-      "lastAccessed": 1775316239785,
       "type": "file"
     },
     {

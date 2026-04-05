@@ -51,4 +51,32 @@
 
 - 업무 목록
   - 벡터 마이그레이션 설계 문서 작성 완료
-  - Phase 1 구현 시작 예정
+  - v0.2.0 벡터 마이그레이션 구현 완료 (10개 태스크)
+  - models.py: Triple/Entity 삭제, SessionMeta 추가, SearchResult 청크 기반 전환
+  - parser.py: JSONL 메타데이터 추출 (cwd, gitBranch, timestamp)
+  - chunker.py: SessionMeta → Chunk 메타데이터 전파
+  - vector.py: 엔티티 → 청크 원문 벡터화 전환, 프로젝트 필터 지원
+  - engine.py: GraphStore 제거, 벡터 → 세션 그루핑 → 청크 반환
+  - 불필요 모듈 6개 삭제 (extractor, prompts, resolver, entity, graph, mcp)
+  - ollama/kuzu 의존성 제거
+  - 다국어 임베딩 모델(paraphrase-multilingual-MiniLM-L12-v2) ChromaDB에 적용
+  - E2E 검증: 3개 프로젝트, 39세션, 249청크 적재 + 검색 품질 확인
+
+### [구조] v0.2.0 아키텍처 전환 실행
+- 변경: Triple 추출 → 청크 벡터화 직행 파이프라인
+- 이유: 소형 LLM 트리플 추출 한계 (품질, 속도, 배포)
+- 영향: 6개 모듈 삭제, 7개 수정, ingest 3~5분→수 초, ollama/kuzu 의존성 제거
+- 파일: src/whatwasthat/ 전체
+
+### [결정] 다국어 임베딩 모델 적용
+- 변경: ChromaDB 기본(all-MiniLM-L6-v2, 영어) → paraphrase-multilingual-MiniLM-L12-v2(다국어)
+- 이유: 영어 모델로는 한국어 동의어 매칭 불가 ("데이터베이스"↔"DB" 등)
+- 파일: src/whatwasthat/storage/vector.py
+
+### [삽질] ChromaDB 기본 임베딩 모델이 영어 전용
+- 시도: 청크 벡터화 후 검색 테스트 → 모든 쿼리에 같은 결과
+- 결과: ChromaDB 기본 임베딩(all-MiniLM-L6-v2)이 한국어 의미 구분 불가
+- 해결: SentenceTransformerEmbeddingFunction으로 다국어 모델 명시 적용
+- 교훈: ChromaDB는 config에 모델명만 적어선 안 되고, embedding_function으로 직접 전달해야 함
+
+  - Phase 2 검색 품질 강화 시작 — BM25 하이브리드 검색부터
