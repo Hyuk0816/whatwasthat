@@ -30,6 +30,101 @@ def init() -> None:
 
 
 @app.command()
+def setup() -> None:
+    """WWT 전체 설정 — DB 초기화 + Stop Hook + MCP 서버 등록."""
+    import json
+    import shutil
+    import subprocess
+
+    config = _get_config()
+
+    # 1. DB 초기화
+    from whatwasthat.storage.vector import VectorStore
+
+    vector = VectorStore(config.chroma_path)
+    vector.initialize()
+    typer.echo("✓ DB 초기화 완료")
+
+    # 2. Stop Hook 스크립트 설치
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook_script = hooks_dir / "wwt_auto_ingest.sh"
+
+    uv_path = shutil.which("uv") or "uv"
+
+    hook_content = f"""#!/bin/bash
+INPUT=$(cat)
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+    exit 0
+fi
+{uv_path} run --directory {Path(__file__).resolve().parents[3]} wwt ingest "$TRANSCRIPT_PATH" \
+    >> "$HOME/.wwt/ingest.log" 2>&1 &
+exit 0
+"""
+    hook_script.write_text(hook_content)
+    hook_script.chmod(0o755)
+    typer.echo("✓ Stop Hook 스크립트 설치 완료")
+
+    # 3. settings.json에 Stop Hook 등록
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+    else:
+        settings = {}
+
+    hooks = settings.setdefault("hooks", {})
+    stop_hooks = hooks.setdefault("Stop", [])
+
+    hook_cmd = f"bash {hook_script}"
+    already_registered = any(
+        hook_cmd in h.get("command", "")
+        for entry in stop_hooks
+        for h in entry.get("hooks", [])
+    )
+
+    if not already_registered:
+        stop_hooks.append({
+            "hooks": [{
+                "type": "command",
+                "command": hook_cmd,
+                "timeout": 15,
+                "async": True,
+            }]
+        })
+        settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+        typer.echo("✓ Stop Hook 등록 완료 (settings.json)")
+    else:
+        typer.echo("✓ Stop Hook 이미 등록됨")
+
+    # 4. MCP 서버 글로벌 등록
+    try:
+        result = subprocess.run(
+            ["claude", "mcp", "list", "--json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        mcp_exists = "whatwasthat" in result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        mcp_exists = False
+
+    if not mcp_exists:
+        try:
+            project_dir = str(Path(__file__).resolve().parents[3])
+            subprocess.run(
+                ["claude", "mcp", "add", "whatwasthat", "--scope", "user",
+                 "--", uv_path, "--directory", project_dir, "run", "wwt-mcp"],
+                timeout=10,
+            )
+            typer.echo("✓ MCP 서버 글로벌 등록 완료")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            typer.echo("⚠ MCP 등록 실패 — 수동으로 실행: claude mcp add whatwasthat --scope user")
+    else:
+        typer.echo("✓ MCP 서버 이미 등록됨")
+
+    typer.echo("\n설정 완료! Claude Code를 재시작하세요.")
+
+
+@app.command()
 def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경로")) -> None:
     """대화 로그를 벡터 DB로 적재."""
     config = _get_config()
