@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 wwt = "whatwasthat.cli.app:app"
+wwt-mcp = "whatwasthat.server.mcp:mcp.run"
 
 [build-system]
 requires = ["hatchling"]

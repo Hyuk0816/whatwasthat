@@ -79,4 +79,10 @@
 - 해결: SentenceTransformerEmbeddingFunction으로 다국어 모델 명시 적용
 - 교훈: ChromaDB는 config에 모델명만 적어선 안 되고, embedding_function으로 직접 전달해야 함
 
-  - Phase 2 검색 품질 강화 시작 — BM25 하이브리드 검색부터
+  - Phase 2 검색 품질 강화 완료
+    - BM25 하이브리드 검색 (벡터 + 키워드)
+    - e5-small 임베딩 모델 교체 (정확도 +85%)
+    - kiwipiepy 형태소 분석 토크나이저
+    - Chunk Overlap (2턴 겹침)
+    - 하이브리드 합집합 후보 풀 확장
+  - Phase 3 MCP 서버 통합 + 데스크톱 앱 연동 리서치

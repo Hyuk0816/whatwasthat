@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-04T15:24:19.710Z",
+  "updatedAt": "2026-04-05T14:18:15.009Z",
   "missions": [
     {
       "id": "session:91bc8c7e-a93a-4ab3-be87-2ea7aa916f45:none",
@@ -7,15 +7,15 @@
       "name": "none",
       "objective": "Session mission",
       "createdAt": "2026-04-04T15:18:45.504Z",
-      "updatedAt": "2026-04-04T15:24:19.710Z",
+      "updatedAt": "2026-04-05T14:18:15.009Z",
       "status": "done",
-      "workerCount": 2,
+      "workerCount": 4,
       "taskCounts": {
-        "total": 2,
+        "total": 4,
         "pending": 0,
         "blocked": 0,
         "inProgress": 0,
-        "completed": 2,
+        "completed": 4,
         "failed": 0
       },
       "agents": [
@@ -38,33 +38,29 @@
           "latestUpdate": "completed",
           "completedSummary": null,
           "updatedAt": "2026-04-04T15:24:19.710Z"
+        },
+        {
+          "name": "deep-research-agent:a15b3cb",
+          "role": "deep-research-agent",
+          "ownership": "a15b3cb569c189260",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-04-05T14:18:15.009Z"
+        },
+        {
+          "name": "Explore:a147da4",
+          "role": "Explore",
+          "ownership": "a147da4f2fd8cde7c",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-04-05T14:16:00.213Z"
         }
       ],
       "timeline": [
-        {
-          "id": "session-start:a67bd20fbd398fe79:2026-04-04T15:18:45.504Z",
-          "at": "2026-04-04T15:18:45.504Z",
-          "kind": "update",
-          "agent": "executor:a67bd20",
-          "detail": "started executor:a67bd20",
-          "sourceKey": "session-start:a67bd20fbd398fe79"
-        },
-        {
-          "id": "session-stop:a67bd20fbd398fe79:2026-04-04T15:21:33.036Z",
-          "at": "2026-04-04T15:21:33.036Z",
-          "kind": "completion",
-          "agent": "executor:a67bd20",
-          "detail": "completed",
-          "sourceKey": "session-stop:a67bd20fbd398fe79"
-        },
-        {
-          "id": "session-start:a9fbae1da7cc13e16:2026-04-04T15:22:54.660Z",
-          "at": "2026-04-04T15:22:54.660Z",
-          "kind": "update",
-          "agent": "executor:a9fbae1",
-          "detail": "started executor:a9fbae1",
-          "sourceKey": "session-start:a9fbae1da7cc13e16"
-        },
         {
           "id": "session-stop:a9fbae1da7cc13e16:2026-04-04T15:24:19.710Z",
           "at": "2026-04-04T15:24:19.710Z",
@@ -72,6 +68,38 @@
           "agent": "executor:a9fbae1",
           "detail": "completed",
           "sourceKey": "session-stop:a9fbae1da7cc13e16"
+        },
+        {
+          "id": "session-start:a15b3cb569c189260:2026-04-05T14:15:16.078Z",
+          "at": "2026-04-05T14:15:16.078Z",
+          "kind": "update",
+          "agent": "deep-research-agent:a15b3cb",
+          "detail": "started deep-research-agent:a15b3cb",
+          "sourceKey": "session-start:a15b3cb569c189260"
+        },
+        {
+          "id": "session-start:a147da4f2fd8cde7c:2026-04-05T14:15:25.401Z",
+          "at": "2026-04-05T14:15:25.401Z",
+          "kind": "update",
+          "agent": "Explore:a147da4",
+          "detail": "started Explore:a147da4",
+          "sourceKey": "session-start:a147da4f2fd8cde7c"
+        },
+        {
+          "id": "session-stop:a147da4f2fd8cde7c:2026-04-05T14:16:00.213Z",
+          "at": "2026-04-05T14:16:00.213Z",
+          "kind": "completion",
+          "agent": "Explore:a147da4",
+          "detail": "completed",
+          "sourceKey": "session-stop:a147da4f2fd8cde7c"
+        },
+        {
+          "id": "session-stop:a15b3cb569c189260:2026-04-05T14:18:15.009Z",
+          "at": "2026-04-05T14:18:15.009Z",
+          "kind": "completion",
+          "agent": "deep-research-agent:a15b3cb",
+          "detail": "completed",
+          "sourceKey": "session-stop:a15b3cb569c189260"
         }
       ]
     }

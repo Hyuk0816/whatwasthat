@@ -5,3 +5,8 @@
 {"t":0,"agent":"a9fbae1","agent_type":"executor","event":"agent_start","parent_mode":"none"}
 {"t":0,"agent":"a9fbae1","agent_type":"executor","event":"agent_stop","success":true,"duration_ms":85050}
 {"t":0,"agent":"system","event":"skill_invoked","skill_name":"work-update"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"work-update"}
+{"t":0,"agent":"a15b3cb","agent_type":"deep-research-agent","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a147da4","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a147da4","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":34812}
+{"t":0,"agent":"a15b3cb","agent_type":"deep-research-agent","event":"agent_stop","success":true,"duration_ms":178931}

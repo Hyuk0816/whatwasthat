@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"uv run ruff check src/ tests/ 2>&1\",\"description\":\"Lint check\"}",
-  "error": "Exit code 1\nE501 Line too long (109 > 100)\n  --> tests/test_pipeline/test_chunker.py:95:76\n   |\n93 | …     \"\"\"오버랩이 있으면 겹치는 부분 때문에 청크가 더 많이 생성됨.\"\"\"\n94 | …     turns = _make_turns([\n95 | …         (\"user\", f\"기술 결정 메시지 {i} — 이것은 충분히 긴 내용입니다 충분히 긴 내용\") for i in range(12)\n   |                                                                                                   ^^^^^^^^^\n96 | …     ])\n97 | …     no_overlap = chunk_turns(turns, session_id=\"s1\", max_turns=6, overlap=0)\n   |\n\nE501 Line too l...",
-  "timestamp": "2026-04-05T14:05:02.610Z",
+  "tool_input_preview": "{\"command\":\"uv run python -c \\\"from whatwasthat.server.mcp import mcp; print(f'MCP server: {mcp.name}'); print(f'Tools: {list(mcp._tool_manager._tools.keys())}')\\\" 2>&1\",\"timeout\":30000,\"description\":...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/Users/hyuk/PycharmProjects/whatwasthat/src/whatwasthat/server/mcp.py\", line 9, in <module>\n    mcp = FastMCP(\n          ^^^^^^^^\nTypeError: FastMCP.__init__() got an unexpected keyword argument 'description'",
+  "timestamp": "2026-04-05T14:31:20.653Z",
   "retry_count": 1
 }
