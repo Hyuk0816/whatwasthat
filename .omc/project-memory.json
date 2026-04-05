@@ -90,15 +90,15 @@
   },
   "hotPaths": [
     {
-      "path": "src/whatwasthat/search/engine.py",
-      "accessCount": 7,
-      "lastAccessed": 1775316893197,
+      "path": "src/whatwasthat/storage/vector.py",
+      "accessCount": 13,
+      "lastAccessed": 1775397156927,
       "type": "file"
     },
     {
-      "path": "src/whatwasthat/storage/vector.py",
-      "accessCount": 7,
-      "lastAccessed": 1775396090118,
+      "path": "src/whatwasthat/search/engine.py",
+      "accessCount": 8,
+      "lastAccessed": 1775396828806,
       "type": "file"
     },
     {
@@ -144,6 +144,12 @@
       "type": "file"
     },
     {
+      "path": "src/whatwasthat/config.py",
+      "accessCount": 4,
+      "lastAccessed": 1775396568734,
+      "type": "file"
+    },
+    {
       "path": "tests/test_pipeline/test_parser.py",
       "accessCount": 3,
       "lastAccessed": 1775316024949,
@@ -177,12 +183,6 @@
       "path": "tests/test_storage/test_vector.py",
       "accessCount": 2,
       "lastAccessed": 1775316229500,
-      "type": "file"
-    },
-    {
-      "path": "src/whatwasthat/config.py",
-      "accessCount": 2,
-      "lastAccessed": 1775316304436,
       "type": "file"
     },
     {

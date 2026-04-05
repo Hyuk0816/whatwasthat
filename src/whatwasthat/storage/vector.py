@@ -13,10 +13,40 @@ from whatwasthat.models import Chunk
 _VECTOR_WEIGHT = 0.6
 
 
+_kiwi = None
+
+
+def _get_kiwi():
+    """Kiwi 형태소 분석기 싱글톤."""
+    global _kiwi  # noqa: PLW0603
+    if _kiwi is None:
+        from kiwipiepy import Kiwi
+        _kiwi = Kiwi()
+    return _kiwi
+
+
 def _tokenize(text: str) -> list[str]:
-    """간단한 공백 + 구두점 기반 토크나이저."""
+    """한국어 형태소 분석(kiwipiepy) + camelCase 분리 혼합 토크나이저."""
     import re
-    return re.findall(r"[가-힣a-zA-Z0-9]+", text.lower())
+
+    # 1차: camelCase 분리 (SheDataset → She Dataset)
+    # 소문자→대문자+소문자 경계만 분리 (PostgreSQL의 eS는 분리하지 않음)
+    text = re.sub(r"([a-z])([A-Z][a-z])", r"\1 \2", text)
+    # 파일 확장자 분리 (file.vue → file vue)
+    text = re.sub(r"\.([a-zA-Z]{1,5})\b", r" \1", text)
+
+    # 2차: kiwipiepy 형태소 분석
+    kiwi = _get_kiwi()
+    tokens = kiwi.tokenize(text)
+
+    # 의미 있는 품사만 추출: 명사(NN*), 영어(SL), 숫자(SN), 동사어간(VV/VA), 어근(XR)
+    meaningful = [
+        t.form.lower()
+        for t in tokens
+        if t.tag.startswith(("NN", "NR", "SL", "SN", "VV", "VA", "XR"))
+        and len(t.form) > 1
+    ]
+    return meaningful
 
 
 class VectorStore:

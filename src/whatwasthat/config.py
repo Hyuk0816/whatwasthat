@@ -8,7 +8,7 @@ WWT_HOME = Path.home() / ".wwt"
 WWT_DATA_DIR = WWT_HOME / "data"
 CHROMA_DB_PATH = WWT_DATA_DIR / "vector"
 
-EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 
 
 class WwtConfig(BaseModel):

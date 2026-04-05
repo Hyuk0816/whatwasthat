@@ -6,7 +6,7 @@ from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
 
 # 최소 유사도 점수 — 이 이하는 관련 없는 결과로 간주
-_MIN_SCORE = 0.3
+_MIN_SCORE = 0.5
 
 
 class SearchEngine:
