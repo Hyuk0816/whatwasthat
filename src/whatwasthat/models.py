@@ -11,6 +11,7 @@ class Turn(BaseModel):
     role: str
     content: str
     timestamp: datetime | None = None
+    source: str = "claude-code"
 
 
 class Chunk(BaseModel):
@@ -24,6 +25,7 @@ class Chunk(BaseModel):
     project: str = ""
     project_path: str = ""
     git_branch: str = ""
+    source: str = "claude-code"
 
 
 class SessionMeta(BaseModel):
@@ -35,6 +37,7 @@ class SessionMeta(BaseModel):
     git_branch: str
     started_at: datetime
     turn_count: int = 0
+    source: str = "claude-code"
 
 
 class SearchResult(BaseModel):
@@ -46,3 +49,4 @@ class SearchResult(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     project: str = ""
     git_branch: str = ""
+    source: str = "claude-code"
