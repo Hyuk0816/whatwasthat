@@ -1,6 +1,6 @@
 [project]
 name = "whatwasthat"
-version = "1.0.6"
+version = "1.0.7"
 description = "AI 대화 기억 검색 — LLM 대화 로그를 벡터화하여 시맨틱 검색"
 readme = "README.md"
 requires-python = ">=3.12"

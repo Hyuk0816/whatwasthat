@@ -173,6 +173,45 @@ class VectorStore:
 
         return len(changed)
 
+    def _resolve_project(self, project: str) -> str:
+        """프로젝트명 퍼지 매칭 — 정확한 이름을 몰라도 찾아줌."""
+        collection = self._get_collection()
+        if collection.count() == 0:
+            return project
+
+        # DB에서 고유 프로젝트 목록 추출
+        all_data = collection.get(include=["metadatas"])
+        projects: set[str] = {
+            m.get("project", "")
+            for m in (all_data["metadatas"] or [])
+            if m and m.get("project")
+        }
+
+        # 1. 정확한 매칭
+        if project in projects:
+            return project
+
+        # 2. 대소문자 무시 매칭
+        lower = project.lower()
+        for p in projects:
+            if p.lower() == lower:
+                return p
+
+        # 3. 정규화 매칭 (_, -, 공백 제거 후 비교)
+        normalized = lower.replace("_", "").replace("-", "").replace(" ", "")
+        for p in projects:
+            p_norm = p.lower().replace("_", "").replace("-", "").replace(" ", "")
+            if normalized == p_norm:
+                return p
+
+        # 4. 부분 문자열 매칭 (한쪽이 다른 쪽을 포함)
+        for p in projects:
+            p_norm = p.lower().replace("_", "").replace("-", "").replace(" ", "")
+            if normalized in p_norm or p_norm in normalized:
+                return p
+
+        return project
+
     def search(
         self,
         query: str,
@@ -184,6 +223,10 @@ class VectorStore:
         collection = self._get_collection()
         if collection.count() == 0:
             return []
+
+        # 프로젝트명 퍼지 매칭
+        if project:
+            project = self._resolve_project(project)
 
         # 후보 풀 크기 — 벡터/BM25 각각 top_k*3을 가져와서 합집합
         candidate_k = min(top_k * 3, collection.count())
