@@ -50,7 +50,7 @@ def setup() -> None:
     hooks_dir.mkdir(parents=True, exist_ok=True)
     hook_script = hooks_dir / "wwt_auto_ingest.sh"
 
-    uv_path = shutil.which("uv") or "uv"
+    wwt_path = shutil.which("wwt") or "wwt"
 
     hook_content = f"""#!/bin/bash
 INPUT=$(cat)
@@ -58,7 +58,7 @@ TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     exit 0
 fi
-{uv_path} run --directory {Path(__file__).resolve().parents[3]} wwt ingest "$TRANSCRIPT_PATH" \
+{wwt_path} ingest "$TRANSCRIPT_PATH" \
     >> "$HOME/.wwt/ingest.log" 2>&1 &
 exit 0
 """
@@ -109,10 +109,10 @@ exit 0
 
     if not mcp_exists:
         try:
-            project_dir = str(Path(__file__).resolve().parents[3])
+            wwt_mcp_path = shutil.which("wwt-mcp") or "wwt-mcp"
             subprocess.run(
                 ["claude", "mcp", "add", "whatwasthat", "--scope", "user",
-                 "--", uv_path, "--directory", project_dir, "run", "wwt-mcp"],
+                 "--", wwt_mcp_path],
                 timeout=10,
             )
             typer.echo("✓ MCP 서버 글로벌 등록 완료")
@@ -120,6 +120,20 @@ exit 0
             typer.echo("⚠ MCP 등록 실패 — 수동으로 실행: claude mcp add whatwasthat --scope user")
     else:
         typer.echo("✓ MCP 서버 이미 등록됨")
+
+    # 5. DB가 비어있으면 기존 세션 자동 적재
+    claude_projects = Path.home() / ".claude" / "projects"
+    if vector.count() == 0 and claude_projects.is_dir():
+        jsonl_files = list(claude_projects.rglob("*.jsonl"))
+        if jsonl_files:
+            typer.echo(f"\n기존 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
+            from subprocess import Popen
+
+            Popen(
+                [shutil.which("wwt") or "wwt", "ingest", str(claude_projects)],
+                start_new_session=True,
+            )
+            typer.echo("✓ 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
 
     typer.echo("\n설정 완료! Claude Code를 재시작하세요.")
 
@@ -148,34 +162,36 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
         sessions = {session_id: parse_jsonl(file_path)}
         meta_map = {session_id: parse_session_meta(file_path)}
 
-    # 1단계: 파싱 + 청킹 (빠름)
-    all_chunks: list = []
-    session_count = 0
+    # 세션별 파싱 → 증분 upsert (대량 적재 시 BM25 재구축 지연)
+    is_bulk = len(sessions) > 1
     total = len(sessions)
+    total_embedded = 0
+    total_chunks = 0
+    session_count = 0
     for si, (session_id, turns) in enumerate(sessions.items(), 1):
         if not turns:
             continue
         meta = meta_map.get(session_id)
         chunks = chunk_turns(turns, session_id=session_id, meta=meta)
-        if chunks:
-            all_chunks.extend(chunks)
-            session_count += 1
+        if not chunks:
+            continue
+        embedded = vector.upsert_session_chunks(
+            session_id, chunks, rebuild_bm25=not is_bulk,
+        )
+        total_embedded += embedded
+        total_chunks += len(chunks)
+        session_count += 1
         if si % 50 == 0 or si == total:
-            typer.echo(f"  파싱: {si}/{total} 세션, {len(all_chunks)} 청크")
+            typer.echo(f"  파싱: {si}/{total} 세션, {total_chunks} 청크")
 
-    if not all_chunks:
+    if not total_chunks:
         typer.echo("적재할 청크가 없습니다.")
         return
 
-    # 2단계: 배치 upsert (임베딩 한 번에 처리)
-    batch_size = 100
-    typer.echo(f"\n벡터화: {len(all_chunks)} 청크 ({session_count} 세션)")
-    for i in range(0, len(all_chunks), batch_size):
-        batch = all_chunks[i : i + batch_size]
-        vector.upsert_chunks(batch)
-        typer.echo(f"  [{i + len(batch)}/{len(all_chunks)}]")
+    if is_bulk:
+        vector.rebuild_index()
 
-    typer.echo(f"\n완료: {session_count} 세션, {len(all_chunks)} 청크 저장")
+    typer.echo(f"\n완료: {session_count} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)")
 
 
 @app.command()

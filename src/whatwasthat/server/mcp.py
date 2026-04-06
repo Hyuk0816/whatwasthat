@@ -120,13 +120,15 @@ def ingest_session(path: str) -> str:
         meta_map = {sid: parse_session_meta(file_path)}
 
     total_chunks = 0
+    total_embedded = 0
     for session_id, turns in sessions.items():
         if not turns:
             continue
         meta = meta_map.get(session_id)
         chunks = chunk_turns(turns, session_id=session_id, meta=meta)
         if chunks:
-            vector.upsert_chunks(chunks)
+            embedded = vector.upsert_session_chunks(session_id, chunks)
             total_chunks += len(chunks)
+            total_embedded += embedded
 
-    return f"완료: {len(sessions)} 세션, {total_chunks} 청크 저장"
+    return f"완료: {len(sessions)} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)"

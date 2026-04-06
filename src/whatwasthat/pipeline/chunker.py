@@ -1,6 +1,6 @@
 """주제 기반 청킹 - Turn 리스트를 의미 단위 Chunk로 분리."""
 
-import uuid
+import hashlib
 
 from whatwasthat.models import Chunk, SessionMeta, Turn
 
@@ -9,6 +9,12 @@ _MIN_CHUNK_CHARS = 200
 
 # 기본 오버랩 턴 수
 _DEFAULT_OVERLAP = 2
+
+
+def _make_chunk_id(session_id: str, start_index: int) -> str:
+    """세션 ID + 시작 턴 인덱스로 결정적 청크 ID 생성."""
+    raw = f"{session_id}:c{start_index}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def chunk_turns(
@@ -42,7 +48,7 @@ def chunk_turns(
         if not has_user or len(raw_text) < _MIN_CHUNK_CHARS:
             continue
         chunks.append(Chunk(
-            id=str(uuid.uuid4())[:8],
+            id=_make_chunk_id(session_id, i),
             session_id=session_id,
             turns=batch,
             raw_text=raw_text,

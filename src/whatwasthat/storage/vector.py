@@ -74,6 +74,10 @@ class VectorStore:
         )
         self._build_bm25_index()
 
+    def count(self) -> int:
+        """저장된 청크 수 반환."""
+        return self._get_collection().count()
+
     def _get_collection(self) -> chromadb.Collection:
         if self._collection is None:
             raise RuntimeError("VectorStore not initialized. Call initialize() first.")
@@ -94,7 +98,7 @@ class VectorStore:
         tokenized = [_tokenize(doc) for doc in docs]
         self._bm25 = BM25Okapi(tokenized) if tokenized else None
 
-    def upsert_chunks(self, chunks: list[Chunk]) -> None:
+    def upsert_chunks(self, chunks: list[Chunk], *, rebuild_bm25: bool = True) -> None:
         if not chunks:
             return
         collection = self._get_collection()
@@ -112,8 +116,61 @@ class VectorStore:
             for i, c in enumerate(chunks)
         ]
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
-        # BM25 인덱스 재구축
+        if rebuild_bm25:
+            self._build_bm25_index()
+
+    def rebuild_index(self) -> None:
+        """BM25 인덱스 수동 재구축 — 대량 적재 후 호출."""
         self._build_bm25_index()
+
+    def upsert_session_chunks(
+        self, session_id: str, chunks: list[Chunk], *, rebuild_bm25: bool = True,
+    ) -> int:
+        """세션 단위 증분 upsert — 변경된 청크만 임베딩, 오래된 중복 정리.
+
+        Args:
+            rebuild_bm25: False면 BM25 재구축 지연 (대량 적재 시 마지막에 rebuild_index() 호출).
+
+        Returns:
+            실제로 임베딩된 청크 수.
+        """
+        if not chunks:
+            return 0
+
+        collection = self._get_collection()
+
+        # 1. 이 세션의 기존 청크 메타 조회
+        existing = collection.get(
+            where={"session_id": session_id},
+            include=["metadatas"],
+        )
+        existing_meta: dict[str, int] = {
+            cid: (meta.get("turn_count", 0) if meta else 0)
+            for cid, meta in zip(existing["ids"], existing["metadatas"] or [])
+        }
+
+        # 2. 새 청크 ID 집합과 비교하여 stale 항목 삭제 (랜덤 UUID 중복 정리)
+        new_ids = {c.id for c in chunks}
+        stale_ids = [cid for cid in existing_meta if cid not in new_ids]
+        if stale_ids:
+            collection.delete(ids=stale_ids)
+
+        # 3. 변경된 청크만 필터 — ID 동일 + turn_count 동일이면 스킵
+        changed: list[Chunk] = []
+        for chunk in chunks:
+            old_turn_count = existing_meta.get(chunk.id)
+            if old_turn_count is not None and old_turn_count == len(chunk.turns):
+                continue  # 내용 동일, 임베딩 스킵
+            changed.append(chunk)
+
+        # 4. 변경분만 upsert (임베딩은 여기서만 발생)
+        if changed:
+            self.upsert_chunks(changed, rebuild_bm25=rebuild_bm25)
+        elif stale_ids:
+            # stale 삭제만 했으면 BM25 재구축 필요
+            self._build_bm25_index()
+
+        return len(changed)
 
     def search(
         self,
