@@ -210,22 +210,33 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
     file_path = Path(path).expanduser()
 
     from whatwasthat.pipeline.chunker import chunk_turns
-    from whatwasthat.pipeline.parser import parse_jsonl, parse_session_dir, parse_session_meta
+    from whatwasthat.pipeline.parser import detect_parser
     from whatwasthat.storage.vector import VectorStore
 
     vector = VectorStore(config.chroma_path)
     vector.initialize()
 
     if file_path.is_dir():
-        sessions = parse_session_dir(file_path)
-        meta_map = {
-            f.stem: parse_session_meta(f)
-            for f in sorted(file_path.rglob("*.jsonl"))
-        }
+        sessions: dict[str, list] = {}
+        meta_map: dict = {}
+        for f in sorted(file_path.rglob("*")):
+            if f.is_file() and f.suffix in (".jsonl", ".json"):
+                parser = detect_parser(f)
+                if parser is None:
+                    continue
+                sid = f.stem
+                turns = parser.parse_turns(f)
+                if turns:
+                    sessions[sid] = turns
+                    meta_map[sid] = parser.parse_meta(f)
     else:
+        parser = detect_parser(file_path)
+        if parser is None:
+            typer.echo(f"지원하지 않는 파일 형식: {file_path}")
+            return
         session_id = file_path.stem
-        sessions = {session_id: parse_jsonl(file_path)}
-        meta_map = {session_id: parse_session_meta(file_path)}
+        sessions = {session_id: parser.parse_turns(file_path)}
+        meta_map = {session_id: parser.parse_meta(file_path)}
 
     # 세션별 파싱 → 증분 upsert (대량 적재 시 BM25 재구축 지연)
     is_bulk = len(sessions) > 1
@@ -285,7 +296,8 @@ def search(
     typer.echo(f"{len(results)}개 세션에서 관련 기억을 찾았습니다:\n")
     for i, result in enumerate(results, 1):
         branch_tag = f" ({result.git_branch})" if result.git_branch else ""
-        header = f"  {i}. {result.project}{branch_tag} (점수: {result.score:.2f})"
+        source_tag = f" [{result.source}]" if result.source else ""
+        header = f"  {i}. {result.project}{branch_tag}{source_tag} (점수: {result.score:.2f})"
         typer.echo(header)
         for chunk in result.chunks[:3]:
             lines = chunk.raw_text.strip().split("\n")[:2]

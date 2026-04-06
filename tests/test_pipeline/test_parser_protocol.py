@@ -51,3 +51,35 @@ class TestDetectParser:
         f = tmp_path / "unknown.txt"
         f.write_text("just plain text")
         assert detect_parser(f) is None
+
+
+class TestIngestWithDetectParser:
+    def test_ingest_gemini_json_end_to_end(self):
+        """Gemini JSON 파일을 detect_parser -> parse -> chunk 전체 플로우 테스트."""
+        from whatwasthat.pipeline.chunker import chunk_turns
+
+        fixture = FIXTURES / "gemini_session.json"
+        parser = detect_parser(fixture)
+        assert parser is not None
+
+        turns = parser.parse_turns(fixture)
+        meta = parser.parse_meta(fixture)
+        chunks = chunk_turns(turns, session_id="gem-test", meta=meta)
+
+        if chunks:
+            assert chunks[0].source == "gemini-cli"
+
+    def test_ingest_claude_jsonl_end_to_end(self):
+        """Claude Code JSONL도 detect_parser로 동일하게 처리."""
+        from whatwasthat.pipeline.chunker import chunk_turns
+
+        fixture = FIXTURES / "sample_session.jsonl"
+        parser = detect_parser(fixture)
+        assert parser is not None
+        assert parser.source == "claude-code"
+
+        turns = parser.parse_turns(fixture)
+        meta = parser.parse_meta(fixture)
+        chunks = chunk_turns(turns, session_id="claude-test", meta=meta)
+        if chunks:
+            assert chunks[0].source == "claude-code"

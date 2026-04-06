@@ -57,7 +57,8 @@ def search_memory(
 
     for i, result in enumerate(results, 1):
         branch = f" ({result.git_branch})" if result.git_branch else ""
-        lines.append(f"{i}. {result.project}{branch} (점수: {result.score:.2f})")
+        source_tag = f" [{result.source}]" if result.source else ""
+        lines.append(f"{i}. {result.project}{branch}{source_tag} (점수: {result.score:.2f})")
         for chunk in result.chunks[:3]:
             for line in chunk.raw_text.strip().split("\n")[:3]:
                 lines.append(f"   {line[:120]}")
@@ -84,7 +85,8 @@ def search_all(query: str) -> str:
 
     for i, result in enumerate(results, 1):
         branch = f" ({result.git_branch})" if result.git_branch else ""
-        lines.append(f"{i}. {result.project}{branch} (점수: {result.score:.2f})")
+        source_tag = f" [{result.source}]" if result.source else ""
+        lines.append(f"{i}. {result.project}{branch}{source_tag} (점수: {result.score:.2f})")
         for chunk in result.chunks[:2]:
             for line in chunk.raw_text.strip().split("\n")[:2]:
                 lines.append(f"   {line[:120]}")
@@ -103,7 +105,7 @@ def ingest_session(path: str) -> str:
     from pathlib import Path
 
     from whatwasthat.pipeline.chunker import chunk_turns
-    from whatwasthat.pipeline.parser import parse_jsonl, parse_session_dir, parse_session_meta
+    from whatwasthat.pipeline.parser import detect_parser
 
     config = WwtConfig()
     config.data_dir.mkdir(parents=True, exist_ok=True)
@@ -112,12 +114,25 @@ def ingest_session(path: str) -> str:
 
     file_path = Path(path).expanduser()
     if file_path.is_dir():
-        sessions = parse_session_dir(file_path)
-        meta_map = {f.stem: parse_session_meta(f) for f in sorted(file_path.glob("*.jsonl"))}
+        sessions: dict[str, list] = {}
+        meta_map: dict = {}
+        for f in sorted(file_path.rglob("*")):
+            if f.is_file() and f.suffix in (".jsonl", ".json"):
+                parser = detect_parser(f)
+                if parser is None:
+                    continue
+                sid = f.stem
+                turns = parser.parse_turns(f)
+                if turns:
+                    sessions[sid] = turns
+                    meta_map[sid] = parser.parse_meta(f)
     else:
+        parser = detect_parser(file_path)
+        if parser is None:
+            return f"지원하지 않는 파일 형식: {file_path}"
         sid = file_path.stem
-        sessions = {sid: parse_jsonl(file_path)}
-        meta_map = {sid: parse_session_meta(file_path)}
+        sessions = {sid: parser.parse_turns(file_path)}
+        meta_map = {sid: parser.parse_meta(file_path)}
 
     total_chunks = 0
     total_embedded = 0
