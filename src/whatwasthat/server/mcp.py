@@ -8,7 +8,13 @@ from whatwasthat.storage.vector import VectorStore
 
 mcp = FastMCP(
     "whatwasthat",
-    instructions="AI 대화 기억 검색 — 과거 대화에서 관련 내용을 시맨틱 검색",
+    instructions=(
+        "사용자가 과거 대화, 이전 작업, 다른 프로젝트 경험을 언급할 때 이 도구를 사용하세요. "
+        "예: '그때 그거 뭐였지?', '이전에 어떻게 했지?', '다른 프로젝트에서 쓴 방법', "
+        "'전에 Redis 설정 어떻게 했었지?', '지난번에 비슷한 버그 어떻게 고쳤지?' 등. "
+        "search_memory는 현재 프로젝트 맥락으로 검색하고, "
+        "search_all은 모든 프로젝트에서 검색합니다."
+    ),
 )
 
 
