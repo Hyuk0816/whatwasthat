@@ -1,10 +1,13 @@
 {
-  "contents": [
-    {"role": "user", "parts": [{"text": "src/main.ts 파일 읽어줘"}]},
-    {"role": "model", "parts": [{"functionCall": {"id": "read-1", "name": "read_file", "args": {"path": "src/main.ts"}}}]},
-    {"role": "user", "parts": [{"functionResponse": {"id": "read-1", "name": "read_file", "response": {"output": "console.log('hello')"}}}]},
-    {"role": "model", "parts": [{"text": "이 파일은 엔트리포인트입니다. console.log로 hello를 출력합니다."}]},
-    {"role": "user", "parts": [{"text": "TypeScript로 변환해줘"}]},
-    {"role": "model", "parts": [{"text": "TypeScript로 변환하겠습니다. const message: string = 'hello'; console.log(message);"}]}
+  "sessionId": "gem-json-001",
+  "projectHash": "abc123hash",
+  "startTime": "2026-04-06T10:00:00Z",
+  "lastUpdated": "2026-04-06T10:05:00Z",
+  "messages": [
+    {"id": "m1", "timestamp": "2026-04-06T10:00:01Z", "type": "user", "content": "src/main.ts 파일 읽어줘"},
+    {"id": "m2", "timestamp": "2026-04-06T10:00:05Z", "type": "info", "content": "Reading file src/main.ts"},
+    {"id": "m3", "timestamp": "2026-04-06T10:00:10Z", "type": "gemini", "content": "이 파일은 엔트리포인트입니다. console.log로 hello를 출력합니다."},
+    {"id": "m4", "timestamp": "2026-04-06T10:01:00Z", "type": "user", "content": "TypeScript로 변환해줘"},
+    {"id": "m5", "timestamp": "2026-04-06T10:01:10Z", "type": "gemini", "content": "TypeScript로 변환하겠습니다. const message: string = 'hello'; console.log(message);"}
   ]
 }

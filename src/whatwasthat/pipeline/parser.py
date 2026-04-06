@@ -236,11 +236,11 @@ class GeminiCliParser:
         return False
 
     def _can_parse_json(self, file_path: Path) -> bool:
-        """JSON 포맷: 최상위에 "contents" 키가 있으면 Gemini."""
+        """JSON 포맷: 최상위에 "messages" + "sessionId" 키가 있으면 Gemini."""
         try:
             with file_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-            return isinstance(data, dict) and "contents" in data
+            return isinstance(data, dict) and "messages" in data and "sessionId" in data
         except (json.JSONDecodeError, OSError):
             return False
 
@@ -277,7 +277,7 @@ class GeminiCliParser:
         return []
 
     def _parse_json(self, file_path: Path) -> list[Turn]:
-        """Gemini JSON 포맷 파싱: contents[].role + parts[].text 추출."""
+        """Gemini JSON 포맷 파싱: messages[].type + messages[].content (plain string) 추출."""
         turns: list[Turn] = []
         try:
             with file_path.open("r", encoding="utf-8") as f:
@@ -285,25 +285,27 @@ class GeminiCliParser:
         except (json.JSONDecodeError, OSError):
             return turns
 
-        for entry in data.get("contents", []):
-            raw_role = entry.get("role", "")
-            role = _GEMINI_ROLE_MAP.get(raw_role, raw_role)
-            if role not in ("user", "assistant"):
+        for entry in data.get("messages", []):
+            entry_type = entry.get("type", "")
+            # "info", "error" 타입은 제외
+            if entry_type not in ("user", "gemini"):
                 continue
 
-            # parts에서 text 키가 있는 항목만 추출 (functionCall/functionResponse 제외)
-            text_parts: list[str] = []
-            for part in entry.get("parts", []):
-                if isinstance(part, dict) and "text" in part:
-                    text_parts.append(part["text"])
-
-            if not text_parts:
+            role = _GEMINI_ROLE_MAP.get(entry_type, entry_type)
+            text = entry.get("content", "")
+            if not isinstance(text, str) or not text:
                 continue
 
-            text = "\n".join(text_parts)
             cleaned = _clean_content(text, role)
             if _is_meaningful(cleaned, role=role):
-                turns.append(Turn(role=role, content=cleaned, source=self.source))
+                ts_str = entry.get("timestamp")
+                timestamp: datetime | None = None
+                if ts_str:
+                    try:
+                        timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    except ValueError:
+                        timestamp = None
+                turns.append(Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source))
 
         return turns
 
@@ -351,16 +353,35 @@ class GeminiCliParser:
         return None
 
     def _parse_meta_json(self, file_path: Path) -> SessionMeta | None:
-        """JSON 포맷에서 메타데이터 추출 (파일명 기반 session_id)."""
+        """JSON 포맷에서 메타데이터 추출 (최상위 sessionId, startTime 필드 사용)."""
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
         turns = self._parse_json(file_path)
         if not turns:
             return None
+
+        session_id: str = data.get("sessionId") or file_path.stem
+
+        start_time_str: str | None = data.get("startTime")
+        started_at: datetime
+        if start_time_str:
+            try:
+                started_at = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+            except ValueError:
+                started_at = datetime.now()
+        else:
+            started_at = datetime.now()
+
         return SessionMeta(
-            session_id=file_path.stem,
+            session_id=session_id,
             project="",
             project_path="",
             git_branch="",
-            started_at=datetime.now(),
+            started_at=started_at,
             turn_count=len(turns),
             source=self.source,
         )

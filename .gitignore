@@ -6,3 +6,6 @@ uv.lock
 dist/
 build/
 .wwt/
+week_work/
+.omc/
+.claude/

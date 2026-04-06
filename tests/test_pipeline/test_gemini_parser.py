@@ -25,12 +25,12 @@ class TestGeminiCliParser:
     def test_parse_json_extracts_text_turns_only(self):
         parser = GeminiCliParser()
         turns = parser.parse_turns(FIXTURES / "gemini_session.json")
-        # functionCall/functionResponse는 제외, text만 추출
-        # user: "src/main.ts 파일 읽어줘", model: "이 파일은 엔트리포인트...",
-        # user: "TypeScript로 변환해줘", model: "TypeScript로 변환하겠습니다..."
+        # "info" 타입은 제외, user + gemini 타입만 추출
+        # user: "src/main.ts 파일 읽어줘", gemini: "이 파일은 엔트리포인트...",
+        # user: "TypeScript로 변환해줘", gemini: "TypeScript로 변환하겠습니다..."
         assert len(turns) == 4
         assert turns[0].role == "user"
-        assert turns[1].role == "assistant"  # "model" → "assistant" 정규화
+        assert turns[1].role == "assistant"  # "gemini" → "assistant" 정규화
         assert turns[0].source == "gemini-cli"
 
     def test_parse_jsonl_format(self):
@@ -44,6 +44,7 @@ class TestGeminiCliParser:
         meta = parser.parse_meta(FIXTURES / "gemini_session.json")
         assert meta is not None
         assert meta.source == "gemini-cli"
+        assert meta.session_id == "gem-json-001"
 
     def test_parse_meta_jsonl(self):
         parser = GeminiCliParser()

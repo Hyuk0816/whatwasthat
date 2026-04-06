@@ -176,18 +176,29 @@ exit 0
         typer.echo("✓ MCP 서버 이미 등록됨")
 
     # 5. DB가 비어있으면 기존 세션 자동 적재
+    from subprocess import Popen
+
     claude_projects = Path.home() / ".claude" / "projects"
     if vector.count() == 0 and claude_projects.is_dir():
         jsonl_files = list(claude_projects.rglob("*.jsonl"))
         if jsonl_files:
-            typer.echo(f"\n기존 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
-            from subprocess import Popen
-
+            typer.echo(f"\n기존 Claude 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
             Popen(
                 [shutil.which("wwt") or "wwt", "ingest", str(claude_projects)],
                 start_new_session=True,
             )
-            typer.echo("✓ 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+            typer.echo("✓ Claude 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+
+    gemini_tmp = Path.home() / ".gemini" / "tmp"
+    if gemini_tmp.is_dir():
+        gemini_json_files = list(gemini_tmp.glob("**/chats/*.json"))
+        if gemini_json_files:
+            typer.echo(f"\n기존 Gemini 대화 로그 발견 ({len(gemini_json_files)}개). 자동 적재 시작...")
+            Popen(
+                [shutil.which("wwt") or "wwt", "ingest", str(gemini_tmp)],
+                start_new_session=True,
+            )
+            typer.echo("✓ Gemini 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
 
     # 6. Gemini CLI Hook 설치 (Gemini CLI가 설치된 경우)
     gemini_dir = Path.home() / ".gemini"
