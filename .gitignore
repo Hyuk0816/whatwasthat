@@ -9,3 +9,5 @@ build/
 week_work/
 .omc/
 .claude/
+.idea/
+.mcp.json
