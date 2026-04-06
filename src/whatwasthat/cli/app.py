@@ -29,6 +29,60 @@ def init() -> None:
     typer.echo(f"WWT 초기화 완료: {config.home_dir}")
 
 
+def _install_gemini_hook(hooks_dir: Path) -> Path:
+    """Gemini CLI AfterAgent hook 스크립트 생성."""
+    import shutil
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    script = hooks_dir / "gemini_ingest.sh"
+    wwt_path = shutil.which("wwt") or "wwt"
+    script.write_text(f"""#!/bin/bash
+INPUT=$(cat)
+echo '{{"decision": "allow"}}'
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+    exit 0
+fi
+{wwt_path} ingest "$TRANSCRIPT_PATH" >> "$HOME/.wwt/ingest.log" 2>&1 &
+exit 0
+""")
+    script.chmod(0o755)
+    return script
+
+
+def _register_gemini_hook(settings_path: Path) -> bool:
+    """~/.gemini/settings.json에 AfterAgent hook 등록."""
+    import json
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+    else:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings = {}
+
+    hooks = settings.setdefault("hooks", {})
+    after_hooks = hooks.setdefault("AfterAgent", [])
+
+    hook_cmd = "bash ~/.wwt/hooks/gemini_ingest.sh"
+    already = any(
+        hook_cmd in h.get("command", "")
+        for entry in after_hooks
+        for h in entry.get("hooks", [])
+    )
+    if already:
+        return False
+
+    after_hooks.append({
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": hook_cmd,
+            "name": "wwt-ingest",
+            "timeout": 60000,
+        }]
+    })
+    settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+    return True
+
+
 @app.command()
 def setup() -> None:
     """WWT 전체 설정 — DB 초기화 + Stop Hook + MCP 서버 등록."""
@@ -134,6 +188,17 @@ exit 0
                 start_new_session=True,
             )
             typer.echo("✓ 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+
+    # 6. Gemini CLI Hook 설치 (Gemini CLI가 설치된 경우)
+    gemini_dir = Path.home() / ".gemini"
+    if gemini_dir.is_dir():
+        wwt_hooks = Path.home() / ".wwt" / "hooks"
+        _install_gemini_hook(wwt_hooks)
+        gemini_settings = gemini_dir / "settings.json"
+        if _register_gemini_hook(gemini_settings):
+            typer.echo("✓ Gemini CLI AfterAgent Hook 등록 완료")
+        else:
+            typer.echo("✓ Gemini CLI Hook 이미 등록됨")
 
     typer.echo("\n설정 완료! Claude Code를 재시작하세요.")
 
