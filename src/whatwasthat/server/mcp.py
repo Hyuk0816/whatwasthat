@@ -42,7 +42,7 @@ def search_memory(
         query: 검색할 내용 (예: "DB 뭘로 했지?", "Redis 캐시 설정")
         project: 특정 프로젝트명으로 필터링 (예: "whatwasthat", "frontend")
         cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
-        source: 특정 플랫폼으로 필터링 ("claude-code", "gemini-cli", "codex-cli" 중 하나)
+        source: 플랫폼 필터 — "claude-code" (Claude Code/클로드), "gemini-cli" (Gemini CLI/제미나이), "codex-cli" (Codex CLI/코덱스)
         git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth")
     """
     engine = _get_engine()
