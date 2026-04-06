@@ -48,8 +48,9 @@ def search_memory(
     engine = _get_engine()
 
     # 프로젝트 필터 결정: 명시적 project > cwd에서 추출 > 전체 검색
+    # 단, source나 git_branch가 명시되면 크로스 프로젝트 검색 의도이므로 cwd 자동 필터 생략
     filter_project = project
-    if not filter_project and cwd:
+    if not filter_project and cwd and not source and not git_branch:
         filter_project = cwd.rstrip("/").split("/")[-1]
 
     results = engine.search(query, project=filter_project, source=source, git_branch=git_branch)
