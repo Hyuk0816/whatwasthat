@@ -29,6 +29,25 @@ def init() -> None:
     typer.echo(f"WWT 초기화 완료: {config.home_dir}")
 
 
+def _install_codex_hook(hooks_dir: Path) -> Path:
+    """Codex CLI Stop hook 스크립트 생성."""
+    import shutil
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    script = hooks_dir / "codex_ingest.sh"
+    wwt_path = shutil.which("wwt") or "wwt"
+    script.write_text(f"""#!/bin/bash
+INPUT=$(cat)
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+    exit 0
+fi
+{wwt_path} ingest "$TRANSCRIPT_PATH" >> "$HOME/.wwt/ingest.log" 2>&1 &
+exit 0
+""")
+    script.chmod(0o755)
+    return script
+
+
 def _install_gemini_hook(hooks_dir: Path) -> Path:
     """Gemini CLI AfterAgent hook 스크립트 생성."""
     import shutil
@@ -175,30 +194,100 @@ exit 0
     else:
         typer.echo("✓ MCP 서버 이미 등록됨")
 
-    # 5. DB가 비어있으면 기존 세션 자동 적재
+    # 4-2. Gemini CLI MCP 등록
+    if shutil.which("gemini"):
+        try:
+            result = subprocess.run(
+                ["gemini", "mcp", "list"],
+                capture_output=True, text=True, timeout=10,
+            )
+            gemini_mcp_exists = "whatwasthat" in result.stdout
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            gemini_mcp_exists = False
+
+        if not gemini_mcp_exists:
+            try:
+                wwt_mcp_path = shutil.which("wwt-mcp") or "wwt-mcp"
+                subprocess.run(
+                    ["gemini", "mcp", "add", "whatwasthat", wwt_mcp_path,
+                     "--scope", "user"],
+                    timeout=10,
+                )
+                typer.echo("✓ Gemini CLI MCP 서버 등록 완료")
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                typer.echo("⚠ Gemini MCP 등록 실패 — 수동: gemini mcp add whatwasthat wwt-mcp --scope user")
+        else:
+            typer.echo("✓ Gemini CLI MCP 서버 이미 등록됨")
+
+    # 4-3. Codex CLI MCP 등록
+    if shutil.which("codex"):
+        try:
+            result = subprocess.run(
+                ["codex", "mcp", "list"],
+                capture_output=True, text=True, timeout=10,
+            )
+            codex_mcp_exists = "whatwasthat" in result.stdout
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            codex_mcp_exists = False
+
+        if not codex_mcp_exists:
+            try:
+                wwt_mcp_path = shutil.which("wwt-mcp") or "wwt-mcp"
+                subprocess.run(
+                    ["codex", "mcp", "add", "whatwasthat",
+                     "--", wwt_mcp_path],
+                    timeout=10,
+                )
+                typer.echo("✓ Codex CLI MCP 서버 등록 완료")
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                typer.echo("⚠ Codex MCP 등록 실패 — 수동: codex mcp add whatwasthat -- wwt-mcp")
+        else:
+            typer.echo("✓ Codex CLI MCP 서버 이미 등록됨")
+
+    # 5. 기존 세션 자동 적재
     from subprocess import Popen
 
+    # 5-1. Claude Code
     claude_projects = Path.home() / ".claude" / "projects"
-    if vector.count() == 0 and claude_projects.is_dir():
+    if claude_projects.is_dir():
         jsonl_files = list(claude_projects.rglob("*.jsonl"))
         if jsonl_files:
-            typer.echo(f"\n기존 Claude 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
+            typer.echo(f"\n기존 Claude Code 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
             Popen(
                 [shutil.which("wwt") or "wwt", "ingest", str(claude_projects)],
                 start_new_session=True,
             )
-            typer.echo("✓ Claude 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+            typer.echo("✓ Claude Code 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+        else:
+            typer.echo("ℹ Claude Code 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
 
+    # 5-2. Gemini CLI
     gemini_tmp = Path.home() / ".gemini" / "tmp"
     if gemini_tmp.is_dir():
         gemini_json_files = list(gemini_tmp.glob("**/chats/*.json"))
         if gemini_json_files:
-            typer.echo(f"\n기존 Gemini 대화 로그 발견 ({len(gemini_json_files)}개). 자동 적재 시작...")
+            typer.echo(f"\n기존 Gemini CLI 대화 로그 발견 ({len(gemini_json_files)}개). 자동 적재 시작...")
             Popen(
                 [shutil.which("wwt") or "wwt", "ingest", str(gemini_tmp)],
                 start_new_session=True,
             )
-            typer.echo("✓ Gemini 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+            typer.echo("✓ Gemini CLI 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+        else:
+            typer.echo("ℹ Gemini CLI 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
+
+    # 5-3. Codex CLI
+    codex_sessions = Path.home() / ".codex" / "sessions"
+    if codex_sessions.is_dir():
+        codex_jsonl_files = list(codex_sessions.rglob("*.jsonl"))
+        if codex_jsonl_files:
+            typer.echo(f"\n기존 Codex CLI 대화 로그 발견 ({len(codex_jsonl_files)}개). 자동 적재 시작...")
+            Popen(
+                [shutil.which("wwt") or "wwt", "ingest", str(codex_sessions)],
+                start_new_session=True,
+            )
+            typer.echo("✓ Codex CLI 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
+        else:
+            typer.echo("ℹ Codex CLI 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
 
     # 6. Gemini CLI Hook 설치 (Gemini CLI가 설치된 경우)
     gemini_dir = Path.home() / ".gemini"
@@ -210,6 +299,15 @@ exit 0
             typer.echo("✓ Gemini CLI AfterAgent Hook 등록 완료")
         else:
             typer.echo("✓ Gemini CLI Hook 이미 등록됨")
+
+    # 7. Codex CLI Hook 설치 (Codex CLI가 설치된 경우)
+    codex_dir = Path.home() / ".codex"
+    if codex_dir.is_dir():
+        wwt_hooks = Path.home() / ".wwt" / "hooks"
+        _install_codex_hook(wwt_hooks)
+        typer.echo("✓ Codex CLI Stop Hook 스크립트 생성 완료")
+        typer.echo("  수동 등록 필요: Codex 프로젝트의 .codex/hooks.json에 추가")
+        typer.echo('  {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"bash ~/.wwt/hooks/codex_ingest.sh"}]}]}}')
 
     typer.echo("\n설정 완료! Claude Code를 재시작하세요.")
 

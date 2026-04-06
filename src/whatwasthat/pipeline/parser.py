@@ -434,7 +434,130 @@ class GeminiCliParser:
         return results
 
 
-_PARSERS: list[SessionParser] = [GeminiCliParser(), ClaudeCodeParser()]
+_CODEX_EVENT_ROLE_MAP: dict[str, str] = {
+    "user_message": "user",
+    "agent_message": "assistant",
+}
+
+
+class CodexCliParser:
+    """OpenAI Codex CLI 롤아웃 JSONL 파서."""
+
+    @property
+    def source(self) -> str:
+        return "codex-cli"
+
+    def can_parse(self, file_path: Path) -> bool:
+        if file_path.suffix != ".jsonl":
+            return False
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                first_line = f.readline().strip()
+                if not first_line:
+                    return False
+                obj = json.loads(first_line)
+                if obj.get("type") == "session_meta" and "payload" in obj:
+                    return True
+                if obj.get("type") == "event_msg" and "payload" in obj:
+                    return True
+            return False
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def parse_turns(self, file_path: Path) -> list[Turn]:
+        turns: list[Turn] = []
+        if not file_path.exists() or file_path.stat().st_size == 0:
+            return turns
+        with file_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                if obj.get("type") != "event_msg":
+                    continue
+                payload = obj.get("payload", {})
+                event_type = payload.get("type", "")
+                role = _CODEX_EVENT_ROLE_MAP.get(event_type)
+                if role is None:
+                    continue
+                text = payload.get("message", "")
+                if not isinstance(text, str) or not text:
+                    continue
+                cleaned = _clean_content(text, role)
+                if _is_meaningful(cleaned, role=role):
+                    timestamp: datetime | None = None
+                    ts_str = obj.get("timestamp")
+                    if ts_str:
+                        try:
+                            timestamp = datetime.fromisoformat(
+                                ts_str.replace("Z", "+00:00")
+                            )
+                        except ValueError:
+                            timestamp = None
+                    turns.append(
+                        Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source)
+                    )
+        return turns
+
+    def parse_meta(self, file_path: Path) -> SessionMeta | None:
+        if not file_path.exists() or file_path.stat().st_size == 0:
+            return None
+        session_id: str | None = None
+        cwd: str | None = None
+        git_branch: str = ""
+        started_at: datetime | None = None
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    if obj.get("type") == "session_meta":
+                        payload = obj.get("payload", {})
+                        session_id = payload.get("id")
+                        cwd = payload.get("cwd")
+                        git_info = payload.get("git") or {}
+                        git_branch = git_info.get("branch", "")
+                        ts_str = payload.get("timestamp") or obj.get("timestamp")
+                        if ts_str:
+                            try:
+                                started_at = datetime.fromisoformat(
+                                    ts_str.replace("Z", "+00:00")
+                                )
+                            except ValueError:
+                                pass
+                        break
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        if not session_id:
+            session_id = file_path.stem
+        if not started_at:
+            started_at = datetime.now()
+
+        project = Path(cwd).name if cwd else ""
+        turns = self.parse_turns(file_path)
+        return SessionMeta(
+            session_id=session_id,
+            project=project,
+            project_path=cwd or "",
+            git_branch=git_branch,
+            started_at=started_at,
+            turn_count=len(turns),
+            source=self.source,
+        )
+
+    def discover_sessions(self, directory: Path) -> dict[str, Path]:
+        results: dict[str, Path] = {}
+        for f in sorted(directory.rglob("*.jsonl")):
+            if self.can_parse(f):
+                results[f.stem] = f
+        return results
+
+
+_PARSERS: list[SessionParser] = [CodexCliParser(), GeminiCliParser(), ClaudeCodeParser()]
 
 
 def detect_parser(file_path: Path) -> SessionParser | None:
