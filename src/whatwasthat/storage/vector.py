@@ -179,6 +179,7 @@ class VectorStore:
         top_k: int = 10,
         project: str | None = None,
         source: str | None = None,
+        git_branch: str | None = None,
     ) -> list[tuple[str, float, dict]]:
         collection = self._get_collection()
         if collection.count() == 0:
@@ -193,6 +194,8 @@ class VectorStore:
             conditions["project"] = project
         if source:
             conditions["source"] = source
+        if git_branch:
+            conditions["git_branch"] = git_branch
         where = conditions if conditions else None
         vec_results = collection.query(
             query_texts=[query],
@@ -230,6 +233,8 @@ class VectorStore:
                     if project and meta.get("project") != project:
                         continue
                     if source and meta.get("source") != source:
+                        continue
+                    if git_branch and meta.get("git_branch") != git_branch:
                         continue
                     bm25_scores[cid] = score / max_bm25
                     if cid not in vec_metas:

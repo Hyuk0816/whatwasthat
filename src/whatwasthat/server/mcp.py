@@ -32,13 +32,18 @@ def search_memory(
     query: str,
     project: str | None = None,
     cwd: str | None = None,
+    source: str | None = None,
+    git_branch: str | None = None,
 ) -> str:
-    """과거 대화에서 관련 기억을 검색합니다.
+    """프로젝트, 플랫폼, 브랜치 등 특정 조건으로 과거 대화를 검색합니다.
+    사용자가 특정 프로젝트, 플랫폼(Claude/Gemini/Codex), 또는 브랜치를 언급하면 이 도구를 사용하세요.
 
     Args:
         query: 검색할 내용 (예: "DB 뭘로 했지?", "Redis 캐시 설정")
-        project: 특정 프로젝트로 필터링 (예: "whatwasthat")
-        cwd: 현재 작업 디렉토리 (자동 감지용, 프로젝트명 추출에 사용)
+        project: 특정 프로젝트명으로 필터링 (예: "whatwasthat", "frontend")
+        cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
+        source: 특정 플랫폼으로 필터링 ("claude-code", "gemini-cli", "codex-cli" 중 하나)
+        git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth")
     """
     engine = _get_engine()
 
@@ -47,7 +52,7 @@ def search_memory(
     if not filter_project and cwd:
         filter_project = cwd.rstrip("/").split("/")[-1]
 
-    results = engine.search(query, project=filter_project)
+    results = engine.search(query, project=filter_project, source=source, git_branch=git_branch)
 
     if not results:
         return "관련 기억을 찾지 못했습니다."
@@ -69,10 +74,11 @@ def search_memory(
 
 @mcp.tool()
 def search_all(query: str) -> str:
-    """모든 프로젝트에서 대화 기억을 검색합니다.
+    """특정 프로젝트, 플랫폼, 브랜치를 언급하지 않고 과거 대화를 검색할 때 사용합니다.
+    모든 프로젝트, 모든 플랫폼에서 통합 검색합니다.
 
     Args:
-        query: 검색할 내용
+        query: 검색할 내용 (예: "전에 했던 Redis 설정", "비슷한 버그 해결")
     """
     engine = _get_engine()
     results = engine.search(query, project=None)

@@ -440,6 +440,8 @@ def search(
     query: str = typer.Argument(help="검색 쿼리"),
     project: str = typer.Option(None, "--project", "-p", help="프로젝트 필터"),
     all_projects: bool = typer.Option(False, "--all", "-a", help="전체 프로젝트 검색"),
+    source: str = typer.Option(None, "--source", "-s", help="플랫폼 필터 (claude-code, gemini-cli, codex-cli)"),
+    branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
 ) -> None:
     """과거 대화에서 관련 기억 검색."""
     config = _get_config()
@@ -452,7 +454,7 @@ def search(
 
     engine = SearchEngine(vector=vector)
     filter_project = None if all_projects else project
-    results = engine.search(query, project=filter_project)
+    results = engine.search(query, project=filter_project, source=source, git_branch=branch)
 
     if not results:
         typer.echo("관련 기억을 찾지 못했습니다.")

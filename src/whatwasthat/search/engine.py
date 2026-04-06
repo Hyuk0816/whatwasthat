@@ -21,8 +21,9 @@ class SearchEngine:
         project: str | None = None,
         top_k: int = 10,
         source: str | None = None,
+        git_branch: str | None = None,
     ) -> list[SearchResult]:
-        hits = self._vector.search(query, top_k=top_k, project=project, source=source)
+        hits = self._vector.search(query, top_k=top_k, project=project, source=source, git_branch=git_branch)
         if not hits:
             return []
 
