@@ -67,3 +67,16 @@ class TestVectorStore:
         store.upsert_chunks([chunk])
         result = store._get_collection().get(ids=["t1"], include=["metadatas"])
         assert result["metadatas"][0]["source"] == "gemini-cli"
+
+    def test_search_with_source_filter(self, tmp_data_dir):
+        store = VectorStore(tmp_data_dir / "vector")
+        store.initialize()
+        chunks = [
+            Chunk(id="ch1", session_id="s1", turns=[], project="proj",
+                  raw_text="DB는 Kuzu를 선택", git_branch="main", source="claude-code"),
+            Chunk(id="ch2", session_id="s2", turns=[], project="proj",
+                  raw_text="DB는 PostgreSQL 선택", git_branch="main", source="gemini-cli"),
+        ]
+        store.upsert_chunks(chunks)
+        results = store.search("DB 선택", top_k=5, source="gemini-cli")
+        assert all(r[2]["source"] == "gemini-cli" for r in results)

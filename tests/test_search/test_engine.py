@@ -58,3 +58,15 @@ class TestSearchEngine:
         vector.upsert_chunks(chunks)
         results = engine.search("DB", project="projectA")
         assert all(r.project == "projectA" for r in results)
+
+    def test_search_with_source_filter(self, tmp_data_dir):
+        engine, vector = self._make_engine(tmp_data_dir)
+        chunks = [
+            Chunk(id="ch1", session_id="s1", turns=[Turn(role="user", content="DB는 Kuzu로")],
+                  raw_text="[user]: DB는 Kuzu로", project="proj", git_branch="main", source="claude-code"),
+            Chunk(id="ch2", session_id="s2", turns=[Turn(role="user", content="DB는 PostgreSQL로")],
+                  raw_text="[user]: DB는 PostgreSQL로", project="proj", git_branch="main", source="gemini-cli"),
+        ]
+        vector.upsert_chunks(chunks)
+        results = engine.search("DB", source="gemini-cli")
+        assert all(r.source == "gemini-cli" for r in results)

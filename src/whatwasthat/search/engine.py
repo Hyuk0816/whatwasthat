@@ -20,8 +20,9 @@ class SearchEngine:
         query: str,
         project: str | None = None,
         top_k: int = 10,
+        source: str | None = None,
     ) -> list[SearchResult]:
-        hits = self._vector.search(query, top_k=top_k, project=project)
+        hits = self._vector.search(query, top_k=top_k, project=project, source=source)
         if not hits:
             return []
 

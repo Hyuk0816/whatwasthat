@@ -178,6 +178,7 @@ class VectorStore:
         query: str,
         top_k: int = 10,
         project: str | None = None,
+        source: str | None = None,
     ) -> list[tuple[str, float, dict]]:
         collection = self._get_collection()
         if collection.count() == 0:
@@ -187,7 +188,12 @@ class VectorStore:
         candidate_k = min(top_k * 3, collection.count())
 
         # 1. 벡터 검색
-        where = {"project": project} if project else None
+        conditions: dict[str, str] = {}
+        if project:
+            conditions["project"] = project
+        if source:
+            conditions["source"] = source
+        where = conditions if conditions else None
         vec_results = collection.query(
             query_texts=[query],
             n_results=candidate_k,
@@ -222,6 +228,8 @@ class VectorStore:
                     cid = self._bm25_ids[idx]
                     meta = self._bm25_metas[idx] if idx < len(self._bm25_metas) else {}
                     if project and meta.get("project") != project:
+                        continue
+                    if source and meta.get("source") != source:
                         continue
                     bm25_scores[cid] = score / max_bm25
                     if cid not in vec_metas:
