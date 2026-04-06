@@ -232,14 +232,20 @@ class VectorStore:
         candidate_k = min(top_k * 3, collection.count())
 
         # 1. 벡터 검색
-        conditions: dict[str, str] = {}
+        filters: list[dict[str, str]] = []
         if project:
-            conditions["project"] = project
+            filters.append({"project": project})
         if source:
-            conditions["source"] = source
+            filters.append({"source": source})
         if git_branch:
-            conditions["git_branch"] = git_branch
-        where = conditions if conditions else None
+            filters.append({"git_branch": git_branch})
+
+        if len(filters) > 1:
+            where = {"$and": filters}
+        elif len(filters) == 1:
+            where = filters[0]
+        else:
+            where = None
         vec_results = collection.query(
             query_texts=[query],
             n_results=candidate_k,
