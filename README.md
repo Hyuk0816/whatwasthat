@@ -117,6 +117,17 @@ wwt setup
 
 ## 사용법
 
+### 각 플랫폼에서 설정하기
+
+| 플랫폼 | 셸 실행 방법 | 설정 명령 |
+|--------|------------|----------|
+| **터미널** | 직접 실행 | `wwt setup` |
+| **Claude Code** | `!` 접두사 | `! wwt setup` |
+| **Gemini CLI** | 자연어 요청 | `"wwt setup 실행해줘"` |
+| **Codex CLI** | 자연어 요청 | `"wwt setup 실행해줘"` |
+
+어떤 플랫폼에서 실행하든 설치된 모든 플랫폼의 MCP + Hook + 기존 대화가 자동 설정됩니다.
+
 ### CLI
 
 ```bash
@@ -134,6 +145,9 @@ wwt search "mTLS 인증서 설정" --project keylink_service
 
 # 전체 프로젝트 검색
 wwt search "비슷한 버그 해결 방법" --all
+
+# 모든 적재 데이터 삭제
+wwt reset
 ```
 
 ### MCP (Claude Code / Gemini CLI / Codex CLI)

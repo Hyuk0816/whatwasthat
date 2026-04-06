@@ -111,7 +111,14 @@ def setup() -> None:
 
     config = _get_config()
 
+    # 0. HuggingFace 경고 suppress
+    import os
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "0")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
     # 1. DB 초기화
+    typer.echo("DB 초기화 중... (최초 실행 시 임베딩 모델 ~470MB 다운로드)")
     from whatwasthat.storage.vector import VectorStore
 
     vector = VectorStore(config.chroma_path)
@@ -244,50 +251,74 @@ exit 0
         else:
             typer.echo("✓ Codex CLI MCP 서버 이미 등록됨")
 
-    # 5. 기존 세션 자동 적재
-    from subprocess import Popen
+    # 5. 기존 세션 자동 적재 (순차, 플랫폼별 진행 표시)
+    from whatwasthat.pipeline.chunker import chunk_turns
+    from whatwasthat.pipeline.parser import detect_parser
 
-    # 5-1. Claude Code
-    claude_projects = Path.home() / ".claude" / "projects"
-    if claude_projects.is_dir():
-        jsonl_files = list(claude_projects.rglob("*.jsonl"))
-        if jsonl_files:
-            typer.echo(f"\n기존 Claude Code 대화 로그 발견 ({len(jsonl_files)}개). 자동 적재 시작...")
-            Popen(
-                [shutil.which("wwt") or "wwt", "ingest", str(claude_projects)],
-                start_new_session=True,
-            )
-            typer.echo("✓ Claude Code 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
-        else:
-            typer.echo("ℹ Claude Code 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
+    def _ingest_platform(
+        label: str, directory: Path, patterns: list[str],
+    ) -> None:
+        """플랫폼별 기존 세션을 순차 적재 (진행 표시 포함)."""
+        if not directory.is_dir():
+            return
 
-    # 5-2. Gemini CLI
-    gemini_tmp = Path.home() / ".gemini" / "tmp"
-    if gemini_tmp.is_dir():
-        gemini_json_files = list(gemini_tmp.glob("**/chats/*.json"))
-        if gemini_json_files:
-            typer.echo(f"\n기존 Gemini CLI 대화 로그 발견 ({len(gemini_json_files)}개). 자동 적재 시작...")
-            Popen(
-                [shutil.which("wwt") or "wwt", "ingest", str(gemini_tmp)],
-                start_new_session=True,
-            )
-            typer.echo("✓ Gemini CLI 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
-        else:
-            typer.echo("ℹ Gemini CLI 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
+        files: list[Path] = []
+        for pattern in patterns:
+            files.extend(directory.glob(pattern))
+        files = sorted(set(f for f in files if f.is_file()))
 
-    # 5-3. Codex CLI
-    codex_sessions = Path.home() / ".codex" / "sessions"
-    if codex_sessions.is_dir():
-        codex_jsonl_files = list(codex_sessions.rglob("*.jsonl"))
-        if codex_jsonl_files:
-            typer.echo(f"\n기존 Codex CLI 대화 로그 발견 ({len(codex_jsonl_files)}개). 자동 적재 시작...")
-            Popen(
-                [shutil.which("wwt") or "wwt", "ingest", str(codex_sessions)],
-                start_new_session=True,
+        if not files:
+            typer.echo(f"ℹ {label} 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
+            return
+
+        typer.echo(f"\n[{label}] {len(files)}개 세션 적재 중...")
+        total = len(files)
+        session_count = 0
+        total_chunks = 0
+        total_embedded = 0
+
+        for i, f in enumerate(files, 1):
+            parser = detect_parser(f)
+            if parser is None:
+                continue
+            turns = parser.parse_turns(f)
+            if not turns:
+                continue
+            meta = parser.parse_meta(f)
+            chunks = chunk_turns(turns, session_id=f.stem, meta=meta)
+            if not chunks:
+                continue
+            embedded = vector.upsert_session_chunks(
+                f.stem, chunks, rebuild_bm25=False,
             )
-            typer.echo("✓ Codex CLI 백그라운드 적재 시작 (로그: ~/.wwt/ingest.log)")
-        else:
-            typer.echo("ℹ Codex CLI 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
+            session_count += 1
+            total_chunks += len(chunks)
+            total_embedded += embedded
+
+            # 진행 표시 (25% 단위 + 마지막)
+            if i == total or i % max(1, total // 4) == 0:
+                pct = i * 100 // total
+                typer.echo(f"  [{label}] {pct}% ({i}/{total}) — {session_count} 세션, {total_chunks} 청크")
+
+        if total_chunks:
+            vector.rebuild_index()
+        typer.echo(f"✓ [{label}] 완료: {session_count} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)")
+
+    _ingest_platform(
+        "Claude Code",
+        Path.home() / ".claude" / "projects",
+        ["**/*.jsonl"],
+    )
+    _ingest_platform(
+        "Gemini CLI",
+        Path.home() / ".gemini" / "tmp",
+        ["**/chats/*.json"],
+    )
+    _ingest_platform(
+        "Codex CLI",
+        Path.home() / ".codex" / "sessions",
+        ["**/*.jsonl"],
+    )
 
     # 6. Gemini CLI Hook 설치 (Gemini CLI가 설치된 경우)
     gemini_dir = Path.home() / ".gemini"
@@ -416,6 +447,25 @@ def search(
 
 
 @app.command()
-def watch() -> None:
-    """백그라운드 데몬 - 새 대화 자동 감지. (Phase 2)"""
-    typer.echo("watch 기능은 Phase 2에서 구현 예정입니다.")
+def reset(
+    force: bool = typer.Option(False, "--force", "-f", help="확인 없이 즉시 삭제"),
+) -> None:
+    """모든 적재 데이터 삭제 (벡터 DB 초기화)."""
+    import shutil as _shutil
+
+    config = _get_config()
+    vector_dir = config.chroma_path
+
+    if not vector_dir.exists():
+        typer.echo("삭제할 데이터가 없습니다.")
+        return
+
+    if not force:
+        confirm = typer.confirm("모든 적재 데이터를 삭제합니다. 계속할까요?")
+        if not confirm:
+            typer.echo("취소되었습니다.")
+            return
+
+    _shutil.rmtree(vector_dir)
+    typer.echo("✓ 모든 적재 데이터 삭제 완료")
+    typer.echo("  다시 적재하려면: wwt setup 또는 wwt ingest <경로>")
