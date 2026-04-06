@@ -336,11 +336,36 @@ exit 0
     if codex_dir.is_dir():
         wwt_hooks = Path.home() / ".wwt" / "hooks"
         _install_codex_hook(wwt_hooks)
-        typer.echo("✓ Codex CLI Stop Hook 스크립트 생성 완료")
-        typer.echo("  수동 등록 필요: Codex 프로젝트의 .codex/hooks.json에 추가")
-        typer.echo('  {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"bash ~/.wwt/hooks/codex_ingest.sh"}]}]}}')
 
-    typer.echo("\n설정 완료! Claude Code를 재시작하세요.")
+        # ~/.codex/hooks.json에 자동 등록
+        codex_hooks_path = codex_dir / "hooks.json"
+        hook_cmd = "bash ~/.wwt/hooks/codex_ingest.sh"
+        if codex_hooks_path.exists():
+            codex_hooks = json.loads(codex_hooks_path.read_text())
+        else:
+            codex_hooks = {}
+
+        hooks_cfg = codex_hooks.setdefault("hooks", {})
+        stop_hooks_list = hooks_cfg.setdefault("Stop", [])
+
+        already_codex = any(
+            hook_cmd in h.get("command", "")
+            for entry in stop_hooks_list
+            for h in entry.get("hooks", [])
+        )
+        if not already_codex:
+            stop_hooks_list.append({
+                "hooks": [{
+                    "type": "command",
+                    "command": hook_cmd,
+                }]
+            })
+            codex_hooks_path.write_text(json.dumps(codex_hooks, indent=2, ensure_ascii=False) + "\n")
+            typer.echo("✓ Codex CLI Stop Hook 등록 완료")
+        else:
+            typer.echo("✓ Codex CLI Hook 이미 등록됨")
+
+    typer.echo("\n설정 완료! 각 플랫폼을 재시작하여 확인하세요.")
 
 
 @app.command()
