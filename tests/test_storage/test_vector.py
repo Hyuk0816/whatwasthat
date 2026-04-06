@@ -58,3 +58,12 @@ class TestVectorStore:
         store = VectorStore(tmp_data_dir / "vector")
         store.initialize()
         assert store.search("아무거나") == []
+
+    def test_upsert_stores_source_metadata(self, tmp_data_dir):
+        store = VectorStore(tmp_data_dir / "vector")
+        store.initialize()
+        chunk = Chunk(id="t1", session_id="s1", turns=[],
+                      raw_text="test content " * 20, source="gemini-cli")
+        store.upsert_chunks([chunk])
+        result = store._get_collection().get(ids=["t1"], include=["metadatas"])
+        assert result["metadatas"][0]["source"] == "gemini-cli"

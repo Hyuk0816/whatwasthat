@@ -112,6 +112,7 @@ class VectorStore:
                 "git_branch": c.git_branch,
                 "chunk_index": i,
                 "turn_count": len(c.turns),
+                "source": c.source,
             }
             for i, c in enumerate(chunks)
         ]

@@ -87,6 +87,15 @@ class TestChunkMetadata:
         chunks = chunk_turns(turns, session_id="s1")
         assert chunks[0].project == ""
 
+    def test_chunk_receives_source_from_meta(self):
+        meta = SessionMeta(
+            session_id="s1", project="proj", project_path="/p",
+            git_branch="main", started_at=datetime(2026, 4, 5), source="gemini-cli"
+        )
+        turns = _make_turns([("user", _LONG_USER), ("assistant", _LONG_ASST)])
+        chunks = chunk_turns(turns, session_id="s1", meta=meta)
+        assert chunks[0].source == "gemini-cli"
+
 
 class TestChunkOverlap:
     def test_overlap_creates_more_chunks(self):

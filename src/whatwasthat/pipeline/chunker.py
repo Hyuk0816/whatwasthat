@@ -36,6 +36,7 @@ def chunk_turns(
     project = meta.project if meta else ""
     project_path = meta.project_path if meta else ""
     git_branch = meta.git_branch if meta else ""
+    source = meta.source if meta else "claude-code"
 
     step = max(1, max_turns - overlap)
     chunks: list[Chunk] = []
@@ -55,5 +56,6 @@ def chunk_turns(
             project=project,
             project_path=project_path,
             git_branch=git_branch,
+            source=source,
         ))
     return chunks

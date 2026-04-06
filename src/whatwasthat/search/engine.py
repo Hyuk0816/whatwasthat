@@ -46,6 +46,7 @@ class SearchEngine:
                 project=meta.get("project", ""),
                 project_path=meta.get("project_path", ""),
                 git_branch=meta.get("git_branch", ""),
+                source=meta.get("source", "claude-code"),
             )
             session_chunks[chunk.session_id].append((chunk, score))
 
@@ -63,6 +64,7 @@ class SearchEngine:
                 score=best_score,
                 project=first_chunk.project,
                 git_branch=first_chunk.git_branch,
+                source=first_chunk.source,
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
