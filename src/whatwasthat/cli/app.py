@@ -295,8 +295,8 @@ exit 0
             total_chunks += len(chunks)
             total_embedded += embedded
 
-            # 진행 표시 (25% 단위 + 마지막)
-            if i == total or i % max(1, total // 4) == 0:
+            # 진행 표시 (10% 단위 + 마지막)
+            if i == total or i % max(1, total // 10) == 0:
                 pct = i * 100 // total
                 typer.echo(f"  [{label}] {pct}% ({i}/{total}) — {session_count} 세션, {total_chunks} 청크")
 
