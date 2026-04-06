@@ -1,9 +1,12 @@
 """대화 로그 파싱 - JSONL 파일을 Turn 리스트로 변환."""
 
+from __future__ import annotations
+
 import json
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from whatwasthat.models import SessionMeta, Turn
 
@@ -157,3 +160,65 @@ def parse_session_meta(file_path: Path) -> SessionMeta | None:
         git_branch=git_branch,
         started_at=started_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# SessionParser Protocol + 구현체
+# ---------------------------------------------------------------------------
+
+class SessionParser(Protocol):
+    """대화 로그 파서 공통 인터페이스."""
+
+    @property
+    def source(self) -> str: ...
+    def can_parse(self, file_path: Path) -> bool: ...
+    def parse_turns(self, file_path: Path) -> list[Turn]: ...
+    def parse_meta(self, file_path: Path) -> SessionMeta | None: ...
+    def discover_sessions(self, directory: Path) -> dict[str, Path]: ...
+
+
+class ClaudeCodeParser:
+    """Claude Code JSONL 대화 로그 파서."""
+
+    @property
+    def source(self) -> str:
+        return "claude-code"
+
+    def can_parse(self, file_path: Path) -> bool:
+        if file_path.suffix != ".jsonl":
+            return False
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                first_line = f.readline().strip()
+                if not first_line:
+                    return False
+                obj = json.loads(first_line)
+                return "sessionId" in obj or obj.get("type") in _ALLOWED_TYPES
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def parse_turns(self, file_path: Path) -> list[Turn]:
+        turns = parse_jsonl(file_path)
+        for t in turns:
+            t.source = self.source
+        return turns
+
+    def parse_meta(self, file_path: Path) -> SessionMeta | None:
+        meta = parse_session_meta(file_path)
+        if meta:
+            meta.source = self.source
+        return meta
+
+    def discover_sessions(self, directory: Path) -> dict[str, Path]:
+        return {f.stem: f for f in sorted(directory.rglob("*.jsonl")) if self.can_parse(f)}
+
+
+_PARSERS: list[SessionParser] = [ClaudeCodeParser()]
+
+
+def detect_parser(file_path: Path) -> SessionParser | None:
+    """파일을 분석하여 적합한 파서를 자동 감지."""
+    for parser in _PARSERS:
+        if parser.can_parse(file_path):
+            return parser
+    return None
