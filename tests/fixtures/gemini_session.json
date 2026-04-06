@@ -1,0 +1,10 @@
+{
+  "contents": [
+    {"role": "user", "parts": [{"text": "src/main.ts 파일 읽어줘"}]},
+    {"role": "model", "parts": [{"functionCall": {"id": "read-1", "name": "read_file", "args": {"path": "src/main.ts"}}}]},
+    {"role": "user", "parts": [{"functionResponse": {"id": "read-1", "name": "read_file", "response": {"output": "console.log('hello')"}}}]},
+    {"role": "model", "parts": [{"text": "이 파일은 엔트리포인트입니다. console.log로 hello를 출력합니다."}]},
+    {"role": "user", "parts": [{"text": "TypeScript로 변환해줘"}]},
+    {"role": "model", "parts": [{"text": "TypeScript로 변환하겠습니다. const message: string = 'hello'; console.log(message);"}]}
+  ]
+}

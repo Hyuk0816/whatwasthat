@@ -213,7 +213,207 @@ class ClaudeCodeParser:
         return {f.stem: f for f in sorted(directory.rglob("*.jsonl")) if self.can_parse(f)}
 
 
-_PARSERS: list[SessionParser] = [ClaudeCodeParser()]
+# Role 정규화 매핑 (Gemini → 내부 표준)
+_GEMINI_ROLE_MAP: dict[str, str] = {
+    "model": "assistant",
+    "gemini": "assistant",
+    "user": "user",
+}
+
+
+class GeminiCliParser:
+    """Gemini CLI 대화 로그 파서 (JSON + JSONL 지원)."""
+
+    @property
+    def source(self) -> str:
+        return "gemini-cli"
+
+    def can_parse(self, file_path: Path) -> bool:
+        if file_path.suffix == ".json":
+            return self._can_parse_json(file_path)
+        if file_path.suffix == ".jsonl":
+            return self._can_parse_jsonl(file_path)
+        return False
+
+    def _can_parse_json(self, file_path: Path) -> bool:
+        """JSON 포맷: 최상위에 "contents" 키가 있으면 Gemini."""
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            return isinstance(data, dict) and "contents" in data
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def _can_parse_jsonl(self, file_path: Path) -> bool:
+        """JSONL 포맷: session_metadata 또는 Gemini 형식 턴 감지."""
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    # session_metadata → Gemini 확정
+                    if obj.get("type") == "session_metadata":
+                        return True
+                    # Claude Code는 "message" 키를 가짐 → 제외
+                    if "message" in obj:
+                        return False
+                    obj_type = obj.get("type", "")
+                    # Gemini JSONL: type in (user, gemini) AND content가 list
+                    if obj_type in ("user", "gemini") and isinstance(
+                        obj.get("content"), list
+                    ):
+                        return True
+            return False
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def parse_turns(self, file_path: Path) -> list[Turn]:
+        if file_path.suffix == ".json":
+            return self._parse_json(file_path)
+        if file_path.suffix == ".jsonl":
+            return self._parse_jsonl(file_path)
+        return []
+
+    def _parse_json(self, file_path: Path) -> list[Turn]:
+        """Gemini JSON 포맷 파싱: contents[].role + parts[].text 추출."""
+        turns: list[Turn] = []
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return turns
+
+        for entry in data.get("contents", []):
+            raw_role = entry.get("role", "")
+            role = _GEMINI_ROLE_MAP.get(raw_role, raw_role)
+            if role not in ("user", "assistant"):
+                continue
+
+            # parts에서 text 키가 있는 항목만 추출 (functionCall/functionResponse 제외)
+            text_parts: list[str] = []
+            for part in entry.get("parts", []):
+                if isinstance(part, dict) and "text" in part:
+                    text_parts.append(part["text"])
+
+            if not text_parts:
+                continue
+
+            text = "\n".join(text_parts)
+            cleaned = _clean_content(text, role)
+            if _is_meaningful(cleaned, role=role):
+                turns.append(Turn(role=role, content=cleaned, source=self.source))
+
+        return turns
+
+    def _parse_jsonl(self, file_path: Path) -> list[Turn]:
+        """Gemini JSONL 포맷 파싱: type in (user, gemini) + content[].text 추출."""
+        turns: list[Turn] = []
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    obj_type = obj.get("type", "")
+                    if obj_type not in ("user", "gemini"):
+                        continue
+
+                    role = _GEMINI_ROLE_MAP.get(obj_type, obj_type)
+
+                    # content 배열에서 text 추출
+                    text_parts: list[str] = []
+                    for item in obj.get("content", []):
+                        if isinstance(item, dict) and "text" in item:
+                            text_parts.append(item["text"])
+
+                    if not text_parts:
+                        continue
+
+                    text = "\n".join(text_parts)
+                    cleaned = _clean_content(text, role)
+                    if _is_meaningful(cleaned, role=role):
+                        turns.append(
+                            Turn(role=role, content=cleaned, source=self.source)
+                        )
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        return turns
+
+    def parse_meta(self, file_path: Path) -> SessionMeta | None:
+        if file_path.suffix == ".json":
+            return self._parse_meta_json(file_path)
+        if file_path.suffix == ".jsonl":
+            return self._parse_meta_jsonl(file_path)
+        return None
+
+    def _parse_meta_json(self, file_path: Path) -> SessionMeta | None:
+        """JSON 포맷에서 메타데이터 추출 (파일명 기반 session_id)."""
+        turns = self._parse_json(file_path)
+        if not turns:
+            return None
+        return SessionMeta(
+            session_id=file_path.stem,
+            project="",
+            project_path="",
+            git_branch="",
+            started_at=datetime.now(),
+            turn_count=len(turns),
+            source=self.source,
+        )
+
+    def _parse_meta_jsonl(self, file_path: Path) -> SessionMeta | None:
+        """JSONL 포맷에서 session_metadata 행으로부터 메타데이터 추출."""
+        session_id: str | None = None
+        started_at: datetime | None = None
+
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    if obj.get("type") == "session_metadata":
+                        session_id = obj.get("sessionId")
+                        start_time = obj.get("startTime")
+                        if start_time:
+                            started_at = datetime.fromisoformat(
+                                start_time.replace("Z", "+00:00")
+                            )
+                        break
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        if not session_id:
+            session_id = file_path.stem
+        if not started_at:
+            started_at = datetime.now()
+
+        turns = self._parse_jsonl(file_path)
+        return SessionMeta(
+            session_id=session_id,
+            project="",
+            project_path="",
+            git_branch="",
+            started_at=started_at,
+            turn_count=len(turns),
+            source=self.source,
+        )
+
+    def discover_sessions(self, directory: Path) -> dict[str, Path]:
+        results: dict[str, Path] = {}
+        for pattern in ("**/*.json", "**/*.jsonl"):
+            for f in sorted(directory.glob(pattern)):
+                if self.can_parse(f):
+                    results[f.stem] = f
+        return results
+
+
+_PARSERS: list[SessionParser] = [GeminiCliParser(), ClaudeCodeParser()]
 
 
 def detect_parser(file_path: Path) -> SessionParser | None:

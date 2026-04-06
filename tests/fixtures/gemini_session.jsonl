@@ -1,0 +1,5 @@
+{"type":"session_metadata","sessionId":"gem-001","projectHash":"abc123","startTime":"2026-04-06T10:00:00Z"}
+{"type":"user","id":"msg1","content":[{"text":"src/main.ts 파일 읽어줘"}]}
+{"type":"gemini","id":"msg2","content":[{"text":"이 파일은 엔트리포인트입니다."}]}
+{"type":"user","id":"msg3","content":[{"text":"TypeScript로 변환해줘"}]}
+{"type":"gemini","id":"msg4","content":[{"text":"TypeScript로 변환한 결과입니다: const message: string = 'hello'; console.log(message);"}]}
