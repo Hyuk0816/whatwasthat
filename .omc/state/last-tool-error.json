@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"uv run python -c \\\"from whatwasthat.server.mcp import mcp; print(f'MCP server: {mcp.name}'); print(f'Tools: {list(mcp._tool_manager._tools.keys())}')\\\" 2>&1\",\"timeout\":30000,\"description\":...",
-  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/Users/hyuk/PycharmProjects/whatwasthat/src/whatwasthat/server/mcp.py\", line 9, in <module>\n    mcp = FastMCP(\n          ^^^^^^^^\nTypeError: FastMCP.__init__() got an unexpected keyword argument 'description'",
-  "timestamp": "2026-04-05T14:31:20.653Z",
-  "retry_count": 1
-}

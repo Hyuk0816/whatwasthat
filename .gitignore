@@ -11,3 +11,5 @@ week_work/
 .claude/
 .idea/
 .mcp.json
+docs/plans/
+tests/
