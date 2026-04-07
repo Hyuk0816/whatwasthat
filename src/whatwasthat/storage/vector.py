@@ -64,6 +64,7 @@ class VectorStore:
         self._bm25: BM25Okapi | None = None
         self._bm25_ids: list[str] = []
         self._bm25_metas: list[dict] = []
+        self._project_cache: set[str] | None = None
 
     def initialize(self) -> None:
         self._db_path.mkdir(parents=True, exist_ok=True)
@@ -115,10 +116,12 @@ class VectorStore:
                 "chunk_index": i,
                 "turn_count": len(c.turns),
                 "source": c.source,
+                "timestamp": c.timestamp.isoformat() if c.timestamp else "",
             }
             for i, c in enumerate(chunks)
         ]
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        self._project_cache = None  # 프로젝트 캐시 무효화
         if rebuild_bm25:
             self._build_bm25_index()
 
@@ -181,13 +184,15 @@ class VectorStore:
         if collection.count() == 0:
             return project
 
-        # DB에서 고유 프로젝트 목록 추출
-        all_data = collection.get(include=["metadatas"])
-        projects: set[str] = {
-            m.get("project", "")
-            for m in (all_data["metadatas"] or [])
-            if m and m.get("project")
-        }
+        # 캐시된 프로젝트 목록 사용
+        if self._project_cache is None:
+            all_data = collection.get(include=["metadatas"])
+            self._project_cache = {
+                m.get("project", "")
+                for m in (all_data["metadatas"] or [])
+                if m and m.get("project")
+            }
+        projects = self._project_cache
 
         # 1. 정확한 매칭
         if project in projects:
