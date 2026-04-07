@@ -1,5 +1,7 @@
 """주제 기반 청킹 - Turn 리스트를 의미 단위 Chunk로 분리."""
 
+from __future__ import annotations
+
 import hashlib
 
 from whatwasthat.models import Chunk, SessionMeta, Turn
@@ -37,6 +39,7 @@ def chunk_turns(
     project_path = meta.project_path if meta else ""
     git_branch = meta.git_branch if meta else ""
     source = meta.source if meta else "claude-code"
+    timestamp = meta.started_at if meta else None
 
     step = max(1, max_turns - overlap)
     chunks: list[Chunk] = []
@@ -48,14 +51,19 @@ def chunk_turns(
         has_user = any(t.role == "user" for t in batch)
         if not has_user or len(raw_text) < _MIN_CHUNK_CHARS:
             continue
+        code_snippets: list[dict[str, str]] = []
+        for turn in batch:
+            code_snippets.extend(turn.code_snippets)
         chunks.append(Chunk(
             id=_make_chunk_id(session_id, i),
             session_id=session_id,
             turns=batch,
             raw_text=raw_text,
+            timestamp=timestamp,
             project=project,
             project_path=project_path,
             git_branch=git_branch,
             source=source,
+            code_snippets=code_snippets,
         ))
     return chunks

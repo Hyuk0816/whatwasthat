@@ -1,5 +1,7 @@
 """WWT 공통 데이터 모델."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -12,6 +14,7 @@ class Turn(BaseModel):
     content: str
     timestamp: datetime | None = None
     source: str = "claude-code"
+    code_snippets: list[dict[str, str]] = []
 
 
 class Chunk(BaseModel):
@@ -26,6 +29,7 @@ class Chunk(BaseModel):
     project_path: str = ""
     git_branch: str = ""
     source: str = "claude-code"
+    code_snippets: list[dict[str, str]] = []
 
 
 class SessionMeta(BaseModel):

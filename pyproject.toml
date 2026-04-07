@@ -3,18 +3,20 @@ name = "whatwasthat"
 version = "1.0.9"
 description = "AI 대화 기억 검색 — LLM 대화 로그를 벡터화하여 시맨틱 검색"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 
 dependencies = [
     "typer>=0.15",
     "chromadb>=0.6",
-    "sentence-transformers>=3.3",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.19",
+    "huggingface-hub>=0.23",
+    "numpy>=1.24",
     "pydantic>=2.10",
     "mcp>=1.0",
     "rank-bm25>=0.2.2",
     "kiwipiepy>=0.23.1",
-    "einops>=0.8.2",
 ]
 
 [project.scripts]
@@ -36,7 +38,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]

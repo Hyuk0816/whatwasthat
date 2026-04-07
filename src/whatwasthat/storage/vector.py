@@ -1,12 +1,14 @@
 """ChromaDB 벡터 DB 래퍼 - 청크 원문 임베딩, 하이브리드 검색(벡터 + BM25)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from rank_bm25 import BM25Okapi
 
 from whatwasthat.config import EMBEDDING_MODEL
+from whatwasthat.embedding import OnnxEmbeddingFunction
 from whatwasthat.models import Chunk
 
 # 하이브리드 검색 가중치: vector * α + bm25 * (1-α)
@@ -62,11 +64,12 @@ class VectorStore:
         self._bm25: BM25Okapi | None = None
         self._bm25_ids: list[str] = []
         self._bm25_metas: list[dict] = []
+        self._project_cache: set[str] | None = None
 
     def initialize(self) -> None:
         self._db_path.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._db_path))
-        ef = SentenceTransformerEmbeddingFunction(model_name=self._model_name)
+        ef = OnnxEmbeddingFunction()
         self._collection = self._client.get_or_create_collection(
             name=self.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
@@ -113,10 +116,17 @@ class VectorStore:
                 "chunk_index": i,
                 "turn_count": len(c.turns),
                 "source": c.source,
+                "timestamp": c.timestamp.isoformat() if c.timestamp else "",
+                "has_code": "true" if c.code_snippets else "false",
+                "code_languages": (
+                    ",".join(sorted({s["language"] for s in c.code_snippets}))
+                    if c.code_snippets else ""
+                ),
             }
             for i, c in enumerate(chunks)
         ]
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        self._project_cache = None  # 프로젝트 캐시 무효화
         if rebuild_bm25:
             self._build_bm25_index()
 
@@ -179,13 +189,15 @@ class VectorStore:
         if collection.count() == 0:
             return project
 
-        # DB에서 고유 프로젝트 목록 추출
-        all_data = collection.get(include=["metadatas"])
-        projects: set[str] = {
-            m.get("project", "")
-            for m in (all_data["metadatas"] or [])
-            if m and m.get("project")
-        }
+        # 캐시된 프로젝트 목록 사용
+        if self._project_cache is None:
+            all_data = collection.get(include=["metadatas"])
+            self._project_cache = {
+                m.get("project", "")
+                for m in (all_data["metadatas"] or [])
+                if m and m.get("project")
+            }
+        projects = self._project_cache
 
         # 1. 정확한 매칭
         if project in projects:
