@@ -456,6 +456,7 @@ def search(
         None, "--source", "-s", help="플랫폼 필터 (claude-code, gemini-cli, codex-cli)",
     ),
     branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
+    mode: str = typer.Option(None, "--mode", "-m", help="검색 모드 (decision, code)"),
 ) -> None:
     """과거 대화에서 관련 기억 검색."""
     config = _get_config()
@@ -468,13 +469,55 @@ def search(
 
     engine = SearchEngine(vector=vector)
     filter_project = None if all_projects else project
-    results = engine.search(query, project=filter_project, source=source, git_branch=branch)
+    results = engine.search(
+        query, project=filter_project, source=source, git_branch=branch, mode=mode,
+    )
 
     if not results:
         typer.echo("관련 기억을 찾지 못했습니다.")
         return
 
     typer.echo(f"{len(results)}개 세션에서 관련 기억을 찾았습니다:\n")
+    for i, result in enumerate(results, 1):
+        branch_tag = f" ({result.git_branch})" if result.git_branch else ""
+        source_tag = f" [{result.source}]" if result.source else ""
+        header = f"  {i}. {result.project}{branch_tag}{source_tag} (점수: {result.score:.2f})"
+        typer.echo(header)
+        for chunk in result.chunks[:3]:
+            lines = chunk.raw_text.strip().split("\n")[:2]
+            for line in lines:
+                typer.echo(f"     {line[:100]}")
+        typer.echo()
+
+
+@app.command()
+def why(
+    query: str = typer.Argument(help="의사결정 검색 쿼리"),
+    project: str = typer.Option(None, "--project", "-p", help="프로젝트 필터"),
+    all_projects: bool = typer.Option(False, "--all", "-a", help="전체 프로젝트 검색"),
+    source: str = typer.Option(None, "--source", "-s", help="플랫폼 필터"),
+    branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
+) -> None:
+    """의사결정 맥락 검색 — '왜 그렇게 했지?' 에 답합니다."""
+    config = _get_config()
+
+    from whatwasthat.search.engine import SearchEngine
+    from whatwasthat.storage.vector import VectorStore
+
+    vector = VectorStore(config.chroma_path)
+    vector.initialize()
+
+    engine = SearchEngine(vector=vector)
+    filter_project = None if all_projects else project
+    results = engine.search(
+        query, project=filter_project, source=source, git_branch=branch, mode="decision",
+    )
+
+    if not results:
+        typer.echo("관련 의사결정 기억을 찾지 못했습니다.")
+        return
+
+    typer.echo(f"{len(results)}개 세션에서 의사결정 기억을 찾았습니다:\n")
     for i, result in enumerate(results, 1):
         branch_tag = f" ({result.git_branch})" if result.git_branch else ""
         source_tag = f" [{result.source}]" if result.source else ""

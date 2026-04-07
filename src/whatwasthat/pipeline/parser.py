@@ -14,6 +14,8 @@ _ALLOWED_TYPES = {"user", "assistant"}
 
 # 코드 블록 제거 패턴
 _CODE_BLOCK_RE = re.compile(r"```[\s\S]*?```")
+# 코드 블록 추출 패턴 (언어 + 본문)
+_CODE_BLOCK_EXTRACT_RE = re.compile(r"```(\w*)\n([\s\S]*?)```")
 # 시스템 블록 전체 제거 (태그 + 내용)
 _SYSTEM_BLOCK_RE = re.compile(
     r"<(system-reminder|command-name|command-message|command-args"
@@ -73,6 +75,17 @@ def _clean_content(text: str, role: str) -> str:
     return cleaned
 
 
+def _extract_code_blocks(text: str) -> list[dict[str, str]]:
+    """코드블록을 추출하여 {language, code} 리스트로 반환."""
+    blocks: list[dict[str, str]] = []
+    for match in _CODE_BLOCK_EXTRACT_RE.finditer(text):
+        lang = match.group(1) or "unknown"
+        code = match.group(2).strip()
+        if len(code) >= 10:  # 너무 짧은 코드는 무시
+            blocks.append({"language": lang, "code": code})
+    return blocks
+
+
 def _is_meaningful(text: str, role: str = "") -> bool:
     """의미 있는 턴인지 판단."""
     if len(text) < 5:
@@ -105,9 +118,10 @@ def parse_jsonl(file_path: Path) -> list[Turn]:
             text = _extract_text(raw_content)
             if not text:
                 continue
+            code_blocks = _extract_code_blocks(text)
             cleaned = _clean_content(text, role)
             if _is_meaningful(cleaned, role=role):
-                turns.append(Turn(role=role, content=cleaned))
+                turns.append(Turn(role=role, content=cleaned, code_snippets=code_blocks))
     return turns
 
 
@@ -296,6 +310,7 @@ class GeminiCliParser:
             if not isinstance(text, str) or not text:
                 continue
 
+            code_blocks = _extract_code_blocks(text)
             cleaned = _clean_content(text, role)
             if _is_meaningful(cleaned, role=role):
                 ts_str = entry.get("timestamp")
@@ -306,7 +321,8 @@ class GeminiCliParser:
                     except ValueError:
                         timestamp = None
                 turns.append(
-                    Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source)
+                    Turn(role=role, content=cleaned, timestamp=timestamp,
+                         source=self.source, code_snippets=code_blocks)
                 )
 
         return turns
@@ -337,10 +353,12 @@ class GeminiCliParser:
                         continue
 
                     text = "\n".join(text_parts)
+                    code_blocks = _extract_code_blocks(text)
                     cleaned = _clean_content(text, role)
                     if _is_meaningful(cleaned, role=role):
                         turns.append(
-                            Turn(role=role, content=cleaned, source=self.source)
+                            Turn(role=role, content=cleaned, source=self.source,
+                                 code_snippets=code_blocks)
                         )
         except (json.JSONDecodeError, OSError):
             pass
@@ -486,6 +504,7 @@ class CodexCliParser:
                 text = payload.get("message", "")
                 if not isinstance(text, str) or not text:
                     continue
+                code_blocks = _extract_code_blocks(text)
                 cleaned = _clean_content(text, role)
                 if _is_meaningful(cleaned, role=role):
                     timestamp: datetime | None = None
@@ -498,7 +517,8 @@ class CodexCliParser:
                         except ValueError:
                             timestamp = None
                     turns.append(
-                        Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source)
+                        Turn(role=role, content=cleaned, timestamp=timestamp,
+                             source=self.source, code_snippets=code_blocks)
                     )
         return turns
 

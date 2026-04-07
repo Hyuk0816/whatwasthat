@@ -117,6 +117,11 @@ class VectorStore:
                 "turn_count": len(c.turns),
                 "source": c.source,
                 "timestamp": c.timestamp.isoformat() if c.timestamp else "",
+                "has_code": "true" if c.code_snippets else "false",
+                "code_languages": (
+                    ",".join(sorted({s["language"] for s in c.code_snippets}))
+                    if c.code_snippets else ""
+                ),
             }
             for i, c in enumerate(chunks)
         ]

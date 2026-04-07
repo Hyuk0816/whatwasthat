@@ -51,6 +51,9 @@ def chunk_turns(
         has_user = any(t.role == "user" for t in batch)
         if not has_user or len(raw_text) < _MIN_CHUNK_CHARS:
             continue
+        code_snippets: list[dict[str, str]] = []
+        for turn in batch:
+            code_snippets.extend(turn.code_snippets)
         chunks.append(Chunk(
             id=_make_chunk_id(session_id, i),
             session_id=session_id,
@@ -61,5 +64,6 @@ def chunk_turns(
             project_path=project_path,
             git_branch=git_branch,
             source=source,
+            code_snippets=code_snippets,
         ))
     return chunks

@@ -14,6 +14,7 @@ class Turn(BaseModel):
     content: str
     timestamp: datetime | None = None
     source: str = "claude-code"
+    code_snippets: list[dict[str, str]] = []
 
 
 class Chunk(BaseModel):
@@ -28,6 +29,7 @@ class Chunk(BaseModel):
     project_path: str = ""
     git_branch: str = ""
     source: str = "claude-code"
+    code_snippets: list[dict[str, str]] = []
 
 
 class SessionMeta(BaseModel):
