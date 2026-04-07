@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from rank_bm25 import BM25Okapi
 
 from whatwasthat.config import EMBEDDING_MODEL
+from whatwasthat.embedding import OnnxEmbeddingFunction
 from whatwasthat.models import Chunk
 
 # 하이브리드 검색 가중치: vector * α + bm25 * (1-α)
@@ -69,7 +69,7 @@ class VectorStore:
     def initialize(self) -> None:
         self._db_path.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._db_path))
-        ef = SentenceTransformerEmbeddingFunction(model_name=self._model_name)
+        ef = OnnxEmbeddingFunction()
         self._collection = self._client.get_or_create_collection(
             name=self.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
