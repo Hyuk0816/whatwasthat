@@ -1,5 +1,7 @@
 """WWT MCP 서버 — Claude Code/Desktop에서 대화 기억 검색."""
 
+from __future__ import annotations
+
 from mcp.server.fastmcp import FastMCP
 
 from whatwasthat.config import WwtConfig
@@ -36,13 +38,16 @@ def search_memory(
     git_branch: str | None = None,
 ) -> str:
     """프로젝트, 플랫폼, 브랜치 등 특정 조건으로 과거 대화를 검색합니다.
-    사용자가 특정 프로젝트, 플랫폼(Claude/Gemini/Codex), 또는 브랜치를 언급하면 이 도구를 사용하세요.
+
+    사용자가 특정 프로젝트, 플랫폼(Claude/Gemini/Codex),
+    또는 브랜치를 언급하면 이 도구를 사용하세요.
 
     Args:
         query: 검색할 내용 (예: "DB 뭘로 했지?", "Redis 캐시 설정")
         project: 특정 프로젝트명으로 필터링 (예: "whatwasthat", "frontend")
         cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
-        source: 플랫폼 필터 — "claude-code" (Claude Code/클로드), "gemini-cli" (Gemini CLI/제미나이), "codex-cli" (Codex CLI/코덱스)
+        source: 플랫폼 필터 — "claude-code" (클로드),
+            "gemini-cli" (제미나이), "codex-cli" (코덱스)
         git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth")
     """
     engine = _get_engine()

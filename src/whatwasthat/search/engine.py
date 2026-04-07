@@ -1,5 +1,7 @@
 """시맨틱 검색 엔진 - ChromaDB 벡터 검색 + 세션 그루핑."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 
 from whatwasthat.models import Chunk, SearchResult
@@ -23,7 +25,9 @@ class SearchEngine:
         source: str | None = None,
         git_branch: str | None = None,
     ) -> list[SearchResult]:
-        hits = self._vector.search(query, top_k=top_k, project=project, source=source, git_branch=git_branch)
+        hits = self._vector.search(
+            query, top_k=top_k, project=project, source=source, git_branch=git_branch,
+        )
         if not hits:
             return []
 

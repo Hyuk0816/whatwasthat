@@ -305,7 +305,9 @@ class GeminiCliParser:
                         timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                     except ValueError:
                         timestamp = None
-                turns.append(Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source))
+                turns.append(
+                    Turn(role=role, content=cleaned, timestamp=timestamp, source=self.source)
+                )
 
         return turns
 

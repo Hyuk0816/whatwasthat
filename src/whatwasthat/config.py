@@ -1,5 +1,7 @@
 """WWT 설정 - 경로, 임베딩 설정, 상수."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from pydantic import BaseModel

@@ -1,5 +1,7 @@
 """wwt CLI 앱 - typer 기반 명령어 인터페이스."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import typer
@@ -222,7 +224,9 @@ exit 0
                 )
                 typer.echo("✓ Gemini CLI MCP 서버 등록 완료")
             except (FileNotFoundError, subprocess.TimeoutExpired):
-                typer.echo("⚠ Gemini MCP 등록 실패 — 수동: gemini mcp add whatwasthat wwt-mcp --scope user")
+                typer.echo(
+                    "⚠ Gemini MCP 등록 실패 — 수동: gemini mcp add whatwasthat wwt-mcp --scope user"
+                )
         else:
             typer.echo("✓ Gemini CLI MCP 서버 이미 등록됨")
 
@@ -298,11 +302,17 @@ exit 0
             # 진행 표시 (10% 단위 + 마지막)
             if i == total or i % max(1, total // 10) == 0:
                 pct = i * 100 // total
-                typer.echo(f"  [{label}] {pct}% ({i}/{total}) — {session_count} 세션, {total_chunks} 청크")
+                typer.echo(
+                    f"  [{label}] {pct}% ({i}/{total}) — {session_count} 세션, {total_chunks} 청크"
+                )
 
         if total_chunks:
             vector.rebuild_index()
-        typer.echo(f"✓ [{label}] 완료: {session_count} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)")
+        msg = (
+            f"✓ [{label}] 완료: {session_count} 세션, "
+            f"{total_chunks} 청크 ({total_embedded} 신규 임베딩)"
+        )
+        typer.echo(msg)
 
     _ingest_platform(
         "Claude Code",
@@ -360,7 +370,9 @@ exit 0
                     "command": hook_cmd,
                 }]
             })
-            codex_hooks_path.write_text(json.dumps(codex_hooks, indent=2, ensure_ascii=False) + "\n")
+            codex_hooks_path.write_text(
+                json.dumps(codex_hooks, indent=2, ensure_ascii=False) + "\n"
+            )
             typer.echo("✓ Codex CLI Stop Hook 등록 완료")
         else:
             typer.echo("✓ Codex CLI Hook 이미 등록됨")
@@ -440,7 +452,9 @@ def search(
     query: str = typer.Argument(help="검색 쿼리"),
     project: str = typer.Option(None, "--project", "-p", help="프로젝트 필터"),
     all_projects: bool = typer.Option(False, "--all", "-a", help="전체 프로젝트 검색"),
-    source: str = typer.Option(None, "--source", "-s", help="플랫폼 필터 (claude-code, gemini-cli, codex-cli)"),
+    source: str = typer.Option(
+        None, "--source", "-s", help="플랫폼 필터 (claude-code, gemini-cli, codex-cli)",
+    ),
     branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
 ) -> None:
     """과거 대화에서 관련 기억 검색."""

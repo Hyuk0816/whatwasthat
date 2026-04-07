@@ -1,5 +1,7 @@
 """WWT 공통 데이터 모델."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field

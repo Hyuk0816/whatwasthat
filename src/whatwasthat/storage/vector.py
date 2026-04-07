@@ -1,5 +1,7 @@
 """ChromaDB 벡터 DB 래퍼 - 청크 원문 임베딩, 하이브리드 검색(벡터 + BM25)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import chromadb

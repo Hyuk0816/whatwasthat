@@ -1,5 +1,7 @@
 """주제 기반 청킹 - Turn 리스트를 의미 단위 Chunk로 분리."""
 
+from __future__ import annotations
+
 import hashlib
 
 from whatwasthat.models import Chunk, SessionMeta, Turn
