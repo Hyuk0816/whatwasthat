@@ -20,13 +20,25 @@ mcp = FastMCP(
 )
 
 
+_engine: SearchEngine | None = None
+
+
 def _get_engine() -> SearchEngine:
-    """SearchEngine 싱글톤."""
-    config = WwtConfig()
-    config.data_dir.mkdir(parents=True, exist_ok=True)
-    vector = VectorStore(config.chroma_path)
-    vector.initialize()
-    return SearchEngine(vector=vector)
+    """SearchEngine 싱글톤 — 초기화는 첫 호출 시 1회만."""
+    global _engine  # noqa: PLW0603
+    if _engine is None:
+        config = WwtConfig()
+        config.data_dir.mkdir(parents=True, exist_ok=True)
+        vector = VectorStore(config.chroma_path)
+        vector.initialize()
+        _engine = SearchEngine(vector=vector)
+    return _engine
+
+
+def _reset_engine() -> None:
+    """테스트용 싱글톤 리셋."""
+    global _engine  # noqa: PLW0603
+    _engine = None
 
 
 @mcp.tool()
@@ -157,5 +169,9 @@ def ingest_session(path: str) -> str:
             embedded = vector.upsert_session_chunks(session_id, chunks)
             total_chunks += len(chunks)
             total_embedded += embedded
+
+    # 적재 후 싱글톤 BM25 갱신
+    if _engine is not None:
+        _engine._vector.rebuild_index()
 
     return f"완료: {len(sessions)} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)"
