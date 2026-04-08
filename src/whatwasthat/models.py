@@ -30,6 +30,7 @@ class Chunk(BaseModel):
     git_branch: str = ""
     source: str = "claude-code"
     code_snippets: list[dict[str, str]] = []
+    start_turn_index: int = 0  # 세션 내 시작 턴 인덱스 (OP-RAG 순서 보존)
 
 
 class SessionMeta(BaseModel):

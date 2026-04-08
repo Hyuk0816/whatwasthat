@@ -1,10 +1,20 @@
-"""시맨틱 검색 엔진 - ChromaDB 벡터 검색 + 세션 그루핑."""
+"""시맨틱 검색 엔진 - ChromaDB 벡터 검색 + 세션 그루핑.
+
+3축 가중합 스코어링 (Generative Agents 2023 기반):
+    final_score = relevance × (w_rel + w_rec × recency + w_imp × importance)
+
+- relevance: 하이브리드 검색 점수 (vector × 0.6 + bm25 × 0.4)
+- recency:   시간 감쇠 (1 - 0.003)^hours_passed
+- importance: 패턴 기반 중요도 (의사결정/에러/아키텍처)
+
+OP-RAG 순서 보존: decision/memory 모드는 청크를 turn 순서(시간순)로 정렬.
+"""
 
 from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
@@ -12,13 +22,111 @@ from whatwasthat.storage.vector import VectorStore
 # 최소 유사도 점수 — 이 이하는 관련 없는 결과로 간주
 _MIN_SCORE = 0.5
 
-# decision 모드: 의사결정 패턴 정규식과 점수 부스팅 계수
+# 의사결정 패턴 (중요도 + decision 모드 부스팅)
 _DECISION_PATTERNS_KO = re.compile(r"대신|선택|결정|이유|비교|으로 갔|하기로|보다|때문에|장단점")
 _DECISION_PATTERNS_EN = re.compile(
     r"instead of|chose|decided|because|compared|trade-?off|prefer|rather than",
     re.IGNORECASE,
 )
-_DECISION_BOOST = 1.3
+
+# 에러/버그/디버깅 패턴
+_ERROR_PATTERNS = re.compile(
+    r"error|bug|traceback|exception|에러|버그|오류|해결|fix|debug",
+    re.IGNORECASE,
+)
+
+# 아키텍처/설계 패턴
+_ARCH_PATTERNS = re.compile(
+    r"architect|design|pattern|refactor|설계|구조|아키텍처|리팩토링",
+    re.IGNORECASE,
+)
+
+# 모드별 3축 가중치 프리셋
+_SCORING_WEIGHTS: dict[str, dict[str, float]] = {
+    "memory": {"w_rel": 0.60, "w_rec": 0.25, "w_imp": 0.15, "decay_rate": 0.003},
+    "decision": {"w_rel": 0.50, "w_rec": 0.15, "w_imp": 0.35, "decay_rate": 0.002},
+    "code": {"w_rel": 0.55, "w_rec": 0.35, "w_imp": 0.10, "decay_rate": 0.005},
+}
+_DEFAULT_WEIGHTS = _SCORING_WEIGHTS["memory"]
+
+
+def _time_decay(hours_passed: float, decay_rate: float) -> float:
+    """지수 시간 감쇠 (LangChain 방식). hours_passed 음수면 1.0 반환."""
+    if hours_passed <= 0:
+        return 1.0
+    return (1.0 - decay_rate) ** hours_passed
+
+
+def _compute_importance(text: str) -> float:
+    """패턴 기반 중요도 스코어 (0.0~1.0). LLM 호출 없이 즉시 계산."""
+    if not text:
+        return 0.3
+
+    score = 0.3  # 기본값
+    has_important_pattern = False
+
+    # 의사결정 패턴 (최고 중요도)
+    if _DECISION_PATTERNS_KO.search(text) or _DECISION_PATTERNS_EN.search(text):
+        score = max(score, 0.85)
+        has_important_pattern = True
+
+    # 에러/디버깅 (높은 중요도)
+    if _ERROR_PATTERNS.search(text):
+        score = max(score, 0.75)
+        has_important_pattern = True
+
+    # 아키텍처/설계 (높은 중요도)
+    if _ARCH_PATTERNS.search(text):
+        score = max(score, 0.70)
+        has_important_pattern = True
+
+    # 코드 블록 밀도 (중간 중요도)
+    if text.count("```") >= 4:
+        score = max(score, 0.55)
+
+    # 짧은 일상 대화 억제 — 중요 패턴 없을 때만 적용
+    # (짧지만 결정적인 텍스트 "Postgres로 가자"는 그대로 유지)
+    if not has_important_pattern:
+        word_count = len(text.split())
+        if word_count < 10:
+            score = min(score, 0.4)
+
+    return min(score, 1.0)
+
+
+def _apply_scoring(
+    relevance: float,
+    chunk_text: str,
+    chunk_timestamp: datetime | None,
+    mode: str | None,
+    now: datetime,
+) -> float:
+    """3축 가중합으로 최종 점수 계산. Generative Agents 2023 방식."""
+    weights = _SCORING_WEIGHTS.get(mode or "memory", _DEFAULT_WEIGHTS)
+
+    # recency
+    if chunk_timestamp is not None:
+        # timezone 정규화 — naive datetime은 UTC로 간주
+        if chunk_timestamp.tzinfo is None:
+            chunk_ts = chunk_timestamp.replace(tzinfo=timezone.utc)
+        else:
+            chunk_ts = chunk_timestamp
+        hours_passed = (now - chunk_ts).total_seconds() / 3600
+        recency = _time_decay(hours_passed, weights["decay_rate"])
+    else:
+        recency = 0.5  # 타임스탬프 없으면 중간값
+
+    # importance
+    importance = _compute_importance(chunk_text)
+
+    # 가중합
+    multiplier = (
+        weights["w_rel"]
+        + weights["w_rec"] * recency
+        + weights["w_imp"] * importance
+    )
+    final = relevance * multiplier
+    return min(max(final, 0.0), 1.0)
 
 
 class SearchEngine:
@@ -42,7 +150,7 @@ class SearchEngine:
         if not hits:
             return []
 
-        # 최소 점수 필터
+        # 최소 점수 필터 (원본 relevance 기준)
         hits = [(cid, score, meta) for cid, score, meta in hits if score >= _MIN_SCORE]
         if not hits:
             return []
@@ -58,34 +166,32 @@ class SearchEngine:
         chunk_ids = [h[0] for h in hits]
         chunk_data = collection.get(ids=chunk_ids, include=["documents", "metadatas"])
 
-        # chunk_id → chunk_data 인덱스 매핑 (decision 재정렬 후에도 안전하게 참조)
+        # chunk_id → chunk_data 인덱스 매핑
         id_to_idx: dict[str, int] = {cid: i for i, cid in enumerate(chunk_data["ids"])}
 
-        # decision 모드: 의사결정 패턴이 있는 청크 점수 부스팅
-        if mode == "decision":
-            boosted: list[tuple[str, float, object]] = []
-            for chunk_id, score, meta in hits:
-                idx = id_to_idx.get(chunk_id, -1)
-                doc = chunk_data["documents"][idx] if idx >= 0 and chunk_data["documents"] else ""
-                if _DECISION_PATTERNS_KO.search(doc) or _DECISION_PATTERNS_EN.search(doc):
-                    score = min(score * _DECISION_BOOST, 1.0)
-                boosted.append((chunk_id, score, meta))
-            hits = sorted(boosted, key=lambda x: x[1], reverse=True)
+        now = datetime.now(timezone.utc)
 
-        session_chunks: defaultdict[str, list[tuple[Chunk, float]]] = defaultdict(list)
-        for chunk_id, score, _ in hits:
+        # 3축 가중합 스코어링 적용 (relevance × (w_rel + w_rec×recency + w_imp×importance))
+        session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
+        for chunk_id, relevance, _ in hits:
             idx = id_to_idx.get(chunk_id, -1)
             meta = chunk_data["metadatas"][idx] if idx >= 0 and chunk_data["metadatas"] else {}
             doc = chunk_data["documents"][idx] if idx >= 0 and chunk_data["documents"] else ""
 
             # meta에서 timestamp 복원
             ts_str = meta.get("timestamp", "")
-            chunk_ts = None
+            chunk_ts: datetime | None = None
             if ts_str:
                 try:
                     chunk_ts = datetime.fromisoformat(ts_str)
                 except ValueError:
                     chunk_ts = None
+
+            # 최종 점수 계산 (3축 가중합)
+            final_score = _apply_scoring(relevance, doc, chunk_ts, mode, now)
+
+            # 세션 내 청크 위치 (OP-RAG 순서 보존용)
+            chunk_index = int(meta.get("chunk_index", 0) or 0)
 
             chunk = Chunk(
                 id=chunk_id,
@@ -97,16 +203,25 @@ class SearchEngine:
                 project_path=meta.get("project_path", ""),
                 git_branch=meta.get("git_branch", ""),
                 source=meta.get("source", "claude-code"),
+                start_turn_index=chunk_index,
             )
-            session_chunks[chunk.session_id].append((chunk, score))
+            session_chunks[chunk.session_id].append((chunk, final_score, chunk_index))
 
         results: list[SearchResult] = []
-        for session_id, chunk_scores in session_chunks.items():
-            chunk_scores.sort(key=lambda x: x[1], reverse=True)
-            chunks = [c for c, _ in chunk_scores]
-            best_score = chunk_scores[0][1]
+        for session_id, scored in session_chunks.items():
+            # 세션의 대표 점수 = 청크 중 최고 점수
+            best_score = max(s for _, s, _ in scored)
+
+            # OP-RAG: decision/memory 모드는 시간순(turn index) 정렬 — 인과 흐름 보존
+            # code 모드는 점수 순 — 가장 관련 높은 스니펫 우선
+            if mode == "code":
+                scored.sort(key=lambda x: x[1], reverse=True)
+            else:
+                scored.sort(key=lambda x: x[2])  # start_turn_index 오름차순
+
+            chunks = [c for c, _, _ in scored]
             first_chunk = chunks[0]
-            summary = chunks[0].raw_text[:200]
+            summary = first_chunk.raw_text[:200]
             results.append(SearchResult(
                 session_id=session_id,
                 chunks=chunks,

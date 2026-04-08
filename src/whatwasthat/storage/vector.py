@@ -113,7 +113,7 @@ class VectorStore:
                 "project": c.project,
                 "project_path": c.project_path,
                 "git_branch": c.git_branch,
-                "chunk_index": i,
+                "chunk_index": c.start_turn_index,  # 세션 내 시작 턴 인덱스
                 "turn_count": len(c.turns),
                 "source": c.source,
                 "timestamp": c.timestamp.isoformat() if c.timestamp else "",
@@ -123,7 +123,7 @@ class VectorStore:
                     if c.code_snippets else ""
                 ),
             }
-            for i, c in enumerate(chunks)
+            for c in chunks
         ]
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
         self._project_cache = None  # 프로젝트 캐시 무효화

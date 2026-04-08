@@ -12,6 +12,7 @@ from whatwasthat.models import SearchResult
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.vector import VectorStore
 
+
 def _format_timestamp(result: SearchResult) -> str:
     """검색 결과의 타임스탬프를 읽기 좋은 문자열로 포맷."""
     if result.started_at is None:

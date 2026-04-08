@@ -65,5 +65,6 @@ def chunk_turns(
             git_branch=git_branch,
             source=source,
             code_snippets=code_snippets,
+            start_turn_index=i,
         ))
     return chunks
