@@ -31,6 +31,7 @@ class Chunk(BaseModel):
     source: str = "claude-code"
     code_snippets: list[dict[str, str]] = []
     start_turn_index: int = 0  # 세션 내 시작 턴 인덱스 (OP-RAG 순서 보존)
+    access_count: int = 0  # 검색 회수 (Spaced Repetition 감쇠율 조절용)
 
 
 class SessionMeta(BaseModel):
