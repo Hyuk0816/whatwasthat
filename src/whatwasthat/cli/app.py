@@ -415,11 +415,10 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
         sessions = {session_id: parser.parse_turns(file_path)}
         meta_map = {session_id: parser.parse_meta(file_path)}
 
-    # 세션별 파싱 → 증분 upsert (대량 적재 시 BM25 재구축 지연)
+    # 세션별 파싱 → 청크 수집 → 벌크 upsert (BM25는 마지막에 1회)
     is_bulk = len(sessions) > 1
     total = len(sessions)
-    total_embedded = 0
-    total_chunks = 0
+    all_chunks: list = []
     session_count = 0
     for si, (session_id, turns) in enumerate(sessions.items(), 1):
         if not turns:
@@ -428,23 +427,29 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
         chunks = chunk_turns(turns, session_id=session_id, meta=meta)
         if not chunks:
             continue
-        embedded = vector.upsert_session_chunks(
-            session_id, chunks, rebuild_bm25=not is_bulk,
-        )
-        total_embedded += embedded
-        total_chunks += len(chunks)
-        session_count += 1
+        if is_bulk:
+            all_chunks.extend(chunks)
+            session_count += 1
+        else:
+            # 단일 세션: 증분 upsert (변경 감지 활용)
+            embedded = vector.upsert_session_chunks(
+                session_id, chunks, rebuild_bm25=True,
+            )
+            typer.echo(f"\n완료: 1 세션, {len(chunks)} 청크 ({embedded} 신규 임베딩)")
+            return
         if si % 50 == 0 or si == total:
-            typer.echo(f"  파싱: {si}/{total} 세션, {total_chunks} 청크")
+            typer.echo(f"  파싱: {si}/{total} 세션, {len(all_chunks)} 청크")
 
-    if not total_chunks:
+    if not all_chunks:
         typer.echo("적재할 청크가 없습니다.")
         return
 
-    if is_bulk:
-        vector.rebuild_index()
+    # 벌크 모드: 전체 청크를 한 번에 upsert → ONNX 배치 효율 극대화
+    typer.echo(f"  임베딩: {len(all_chunks)} 청크 일괄 처리 중...")
+    vector.upsert_chunks(all_chunks, rebuild_bm25=False)
+    vector.rebuild_index()
 
-    typer.echo(f"\n완료: {session_count} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)")
+    typer.echo(f"\n완료: {session_count} 세션, {len(all_chunks)} 청크 (벌크 임베딩)")
 
 
 @app.command()

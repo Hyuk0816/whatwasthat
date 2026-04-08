@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import fcntl
-import time
-from typing import IO
+from contextlib import contextmanager
 
 from mcp.server.fastmcp import FastMCP
 
 import whatwasthat.config as _config_module
-from whatwasthat.config import WwtConfig
 from whatwasthat.models import SearchResult
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.vector import VectorStore
@@ -35,31 +33,15 @@ mcp = FastMCP(
 
 
 _engine: SearchEngine | None = None
-_lock_fd: IO[str] | None = None  # 프로세스 수명 동안 락 유지
 
 
 def _get_engine() -> SearchEngine:
-    """SearchEngine 싱글톤 — 파일 락으로 다중 인스턴스 보호."""
-    global _engine, _lock_fd  # noqa: PLW0603
+    """SearchEngine 싱글톤 — 읽기 전용, 락 불필요."""
+    global _engine  # noqa: PLW0603
     if _engine is None:
-        # 모듈 변수를 직접 읽어 monkeypatch가 반영되도록 함
         data_dir = _config_module.WWT_DATA_DIR
         chroma_path = _config_module.CHROMA_DB_PATH
         data_dir.mkdir(parents=True, exist_ok=True)
-
-        # 파일 락 — 프로세스 종료 시 자동 해제
-        lock_path = data_dir / "wwt.lock"
-        _lock_fd = open(lock_path, "w")  # noqa: SIM115
-        for attempt in range(5):
-            try:
-                fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError:
-                if attempt == 4:
-                    # 5회 실패 시 공유 락으로 읽기 전용 모드
-                    fcntl.flock(_lock_fd, fcntl.LOCK_SH)
-                    break
-                time.sleep(1)
 
         vector = VectorStore(chroma_path)
         vector.initialize()
@@ -67,16 +49,25 @@ def _get_engine() -> SearchEngine:
     return _engine
 
 
+@contextmanager
+def _write_lock():
+    """쓰기 작업 시 배타 락 획득 — 완료 후 즉시 해제.
+
+    여러 MCP 프로세스가 동시에 ingest해도 순차 처리되어 데이터 유실 없음.
+    """
+    lock_path = _config_module.WWT_DATA_DIR / "wwt.lock"
+    fd = open(lock_path, "w")  # noqa: SIM115
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)  # 블로킹 — 다른 writer 완료까지 대기
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+
+
 def _reset_engine() -> None:
     """테스트용 싱글톤 리셋."""
-    global _engine, _lock_fd  # noqa: PLW0603
-    if _lock_fd is not None:
-        try:
-            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-            _lock_fd.close()
-        except OSError:
-            pass
-        _lock_fd = None
+    global _engine  # noqa: PLW0603
     _engine = None
 
 
@@ -218,11 +209,6 @@ def ingest_session(path: str) -> str:
     from whatwasthat.pipeline.chunker import chunk_turns
     from whatwasthat.pipeline.parser import detect_parser
 
-    config = WwtConfig()
-    config.data_dir.mkdir(parents=True, exist_ok=True)
-    vector = VectorStore(config.chroma_path)
-    vector.initialize()
-
     file_path = Path(path).expanduser()
     if file_path.is_dir():
         sessions: dict[str, list] = {}
@@ -245,21 +231,23 @@ def ingest_session(path: str) -> str:
         sessions = {sid: parser.parse_turns(file_path)}
         meta_map = {sid: parser.parse_meta(file_path)}
 
+    engine = _get_engine()
     total_chunks = 0
     total_embedded = 0
-    for session_id, turns in sessions.items():
-        if not turns:
-            continue
-        meta = meta_map.get(session_id)
-        chunks = chunk_turns(turns, session_id=session_id, meta=meta)
-        if chunks:
-            embedded = vector.upsert_session_chunks(session_id, chunks)
-            total_chunks += len(chunks)
-            total_embedded += embedded
 
-    # 적재 후 싱글톤 BM25 갱신
-    if _engine is not None:
-        _engine._vector.rebuild_index()
+    with _write_lock():
+        for session_id, turns in sessions.items():
+            if not turns:
+                continue
+            meta = meta_map.get(session_id)
+            chunks = chunk_turns(turns, session_id=session_id, meta=meta)
+            if chunks:
+                embedded = engine._vector.upsert_session_chunks(
+                    session_id, chunks, rebuild_bm25=False,
+                )
+                total_chunks += len(chunks)
+                total_embedded += embedded
+        engine._vector.rebuild_index()
 
     return f"완료: {len(sessions)} 세션, {total_chunks} 청크 ({total_embedded} 신규 임베딩)"
 
