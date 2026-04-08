@@ -49,6 +49,18 @@ class TestMcpServer:
         assert engine1 is engine2
         _reset_engine()  # cleanup
 
+    def test_engine_creates_lock_file(self, tmp_data_dir, monkeypatch):
+        from whatwasthat import config
+        monkeypatch.setattr(config, "CHROMA_DB_PATH", tmp_data_dir / "vector")
+        monkeypatch.setattr(config, "WWT_DATA_DIR", tmp_data_dir)
+
+        from whatwasthat.server.mcp import _get_engine, _reset_engine
+        _reset_engine()
+        _get_engine()
+        lock_path = tmp_data_dir / "wwt.lock"
+        assert lock_path.exists()
+        _reset_engine()
+
     def test_search_result_format_includes_timestamp(self, tmp_data_dir, monkeypatch):
         """검색 결과 출력에 날짜/시간이 포함되어야 한다."""
         from datetime import datetime, timezone

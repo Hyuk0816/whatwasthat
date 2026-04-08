@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
+import time
+from typing import IO
+
 from mcp.server.fastmcp import FastMCP
 
+import whatwasthat.config as _config_module
 from whatwasthat.config import WwtConfig
 from whatwasthat.models import SearchResult
 from whatwasthat.search.engine import SearchEngine
@@ -30,15 +35,33 @@ mcp = FastMCP(
 
 
 _engine: SearchEngine | None = None
+_lock_fd: IO[str] | None = None  # 프로세스 수명 동안 락 유지
 
 
 def _get_engine() -> SearchEngine:
-    """SearchEngine 싱글톤 — 초기화는 첫 호출 시 1회만."""
-    global _engine  # noqa: PLW0603
+    """SearchEngine 싱글톤 — 파일 락으로 다중 인스턴스 보호."""
+    global _engine, _lock_fd  # noqa: PLW0603
     if _engine is None:
-        config = WwtConfig()
-        config.data_dir.mkdir(parents=True, exist_ok=True)
-        vector = VectorStore(config.chroma_path)
+        # 모듈 변수를 직접 읽어 monkeypatch가 반영되도록 함
+        data_dir = _config_module.WWT_DATA_DIR
+        chroma_path = _config_module.CHROMA_DB_PATH
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # 파일 락 — 프로세스 종료 시 자동 해제
+        lock_path = data_dir / "wwt.lock"
+        _lock_fd = open(lock_path, "w")  # noqa: SIM115
+        for attempt in range(5):
+            try:
+                fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if attempt == 4:
+                    # 5회 실패 시 공유 락으로 읽기 전용 모드
+                    fcntl.flock(_lock_fd, fcntl.LOCK_SH)
+                    break
+                time.sleep(1)
+
+        vector = VectorStore(chroma_path)
         vector.initialize()
         _engine = SearchEngine(vector=vector)
     return _engine
@@ -46,7 +69,14 @@ def _get_engine() -> SearchEngine:
 
 def _reset_engine() -> None:
     """테스트용 싱글톤 리셋."""
-    global _engine  # noqa: PLW0603
+    global _engine, _lock_fd  # noqa: PLW0603
+    if _lock_fd is not None:
+        try:
+            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+            _lock_fd.close()
+        except OSError:
+            pass
+        _lock_fd = None
     _engine = None
 
 
