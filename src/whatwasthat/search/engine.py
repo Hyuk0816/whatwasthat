@@ -57,6 +57,20 @@ def _time_decay(hours_passed: float, decay_rate: float) -> float:
     return (1.0 - decay_rate) ** hours_passed
 
 
+def _adjusted_decay_rate(base_rate: float, access_count: int) -> float:
+    """접근 횟수에 따라 감쇠율을 낮춤 (Spaced Repetition).
+
+    access_count가 많을수록 decay_rate가 작아져 기억이 오래 유지된다.
+    - access=0:  base_rate 그대로
+    - access=5:  base_rate / 1.5
+    - access=10: base_rate / 2.0
+    - access=20: base_rate / 3.0
+    """
+    if access_count <= 0:
+        return base_rate
+    return base_rate / (1.0 + 0.1 * access_count)
+
+
 def _compute_importance(text: str) -> float:
     """패턴 기반 중요도 스코어 (0.0~1.0). LLM 호출 없이 즉시 계산."""
     if not text:
@@ -100,11 +114,16 @@ def _apply_scoring(
     chunk_timestamp: datetime | None,
     mode: str | None,
     now: datetime,
+    access_count: int = 0,
 ) -> float:
-    """3축 가중합으로 최종 점수 계산. Generative Agents 2023 방식."""
+    """3축 가중합으로 최종 점수 계산. Generative Agents 2023 방식.
+
+    access_count가 높을수록 recency 감쇠가 느려짐 (Spaced Repetition).
+    """
     weights = _SCORING_WEIGHTS.get(mode or "memory", _DEFAULT_WEIGHTS)
 
-    # recency
+    # recency (접근 빈도 보정된 감쇠율 사용)
+    effective_decay = _adjusted_decay_rate(weights["decay_rate"], access_count)
     if chunk_timestamp is not None:
         # timezone 정규화 — naive datetime은 UTC로 간주
         if chunk_timestamp.tzinfo is None:
@@ -112,7 +131,7 @@ def _apply_scoring(
         else:
             chunk_ts = chunk_timestamp
         hours_passed = (now - chunk_ts).total_seconds() / 3600
-        recency = _time_decay(hours_passed, weights["decay_rate"])
+        recency = _time_decay(hours_passed, effective_decay)
     else:
         recency = 0.5  # 타임스탬프 없으면 중간값
 
@@ -173,6 +192,7 @@ class SearchEngine:
 
         # 3축 가중합 스코어링 적용 (relevance × (w_rel + w_rec×recency + w_imp×importance))
         session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
+        hit_chunk_ids: list[str] = []  # Spaced Repetition: 회수 +1 증가용
         for chunk_id, relevance, _ in hits:
             idx = id_to_idx.get(chunk_id, -1)
             meta = chunk_data["metadatas"][idx] if idx >= 0 and chunk_data["metadatas"] else {}
@@ -187,8 +207,13 @@ class SearchEngine:
                 except ValueError:
                     chunk_ts = None
 
-            # 최종 점수 계산 (3축 가중합)
-            final_score = _apply_scoring(relevance, doc, chunk_ts, mode, now)
+            # access_count 메타에서 복원 (Spaced Repetition)
+            access_count = int(meta.get("access_count", 0) or 0)
+
+            # 최종 점수 계산 (3축 가중합 + access-boosted decay)
+            final_score = _apply_scoring(
+                relevance, doc, chunk_ts, mode, now, access_count=access_count,
+            )
 
             # 세션 내 청크 위치 (OP-RAG 순서 보존용)
             chunk_index = int(meta.get("chunk_index", 0) or 0)
@@ -204,8 +229,10 @@ class SearchEngine:
                 git_branch=meta.get("git_branch", ""),
                 source=meta.get("source", "claude-code"),
                 start_turn_index=chunk_index,
+                access_count=access_count,
             )
             session_chunks[chunk.session_id].append((chunk, final_score, chunk_index))
+            hit_chunk_ids.append(chunk_id)
 
         results: list[SearchResult] = []
         for session_id, scored in session_chunks.items():
@@ -234,4 +261,9 @@ class SearchEngine:
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
+
+        # Spaced Repetition: 검색된 청크들의 access_count 증가
+        if hit_chunk_ids:
+            self._vector.increment_access_counts(hit_chunk_ids)
+
         return results
