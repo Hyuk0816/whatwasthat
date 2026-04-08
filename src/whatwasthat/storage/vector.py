@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import pickle
 from pathlib import Path
@@ -13,6 +14,8 @@ import whatwasthat.config as _config_module
 from whatwasthat.config import EMBEDDING_MODEL
 from whatwasthat.embedding import OnnxEmbeddingFunction
 from whatwasthat.models import Chunk
+
+_log = logging.getLogger("whatwasthat.vector")
 
 # 하이브리드 검색 가중치: vector * α + bm25 * (1-α)
 _VECTOR_WEIGHT = 0.6
@@ -166,7 +169,12 @@ class VectorStore:
         """디스크 version이 메모리 캐시보다 새것이면 reload — cross-process freshness."""
         disk_version = self._read_bm25_version()
         if disk_version > self._bm25_version_seen:
-            self._try_load_bm25_from_disk()
+            old = self._bm25_version_seen
+            if self._try_load_bm25_from_disk():
+                _log.info(
+                    "BM25 reloaded from disk: v%d → v%d",
+                    old, self._bm25_version_seen,
+                )
 
     def upsert_chunks(self, chunks: list[Chunk], *, rebuild_bm25: bool = True) -> None:
         if not chunks:
@@ -429,11 +437,16 @@ class VectorStore:
                     include=[],  # only need IDs
                 )
                 existing_set = set(existing.get("ids") or [])
+                phantoms = [cid for cid, _, _ in top_combined if cid not in existing_set]
+                if phantoms:
+                    _log.warning(
+                        "vector.search dropped %d phantom IDs from BM25/vec results: %s",
+                        len(phantoms), phantoms[:5],  # 처음 5개만 로깅
+                    )
                 top_combined = [
                     (cid, score, meta) for cid, score, meta in top_combined
                     if cid in existing_set
                 ]
-            except Exception:
-                # Fall back to no filtering rather than crashing
-                pass
+            except Exception as e:
+                _log.exception("Defensive ID filter failed: %s", e)
         return top_combined
