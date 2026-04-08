@@ -101,7 +101,10 @@ def search_memory(
     if not filter_project and cwd and not source and not git_branch:
         filter_project = cwd.rstrip("/").split("/")[-1]
 
-    results = engine.search(query, project=filter_project, source=source, git_branch=git_branch)
+    # Self-ROUTE 자동 라우팅: 1차 결과 점수에 따라 확장 여부 결정
+    results = engine.search_with_routing(
+        query, project=filter_project, source=source, git_branch=git_branch,
+    )
 
     if not results:
         return "관련 기억을 찾지 못했습니다."
