@@ -162,6 +162,12 @@ class VectorStore:
             # 손상되었거나 호환 불가 — 재빌드로 fallback
             return False
 
+    def _maybe_reload_bm25(self) -> None:
+        """디스크 version이 메모리 캐시보다 새것이면 reload — cross-process freshness."""
+        disk_version = self._read_bm25_version()
+        if disk_version > self._bm25_version_seen:
+            self._try_load_bm25_from_disk()
+
     def upsert_chunks(self, chunks: list[Chunk], *, rebuild_bm25: bool = True) -> None:
         if not chunks:
             return
@@ -330,6 +336,8 @@ class VectorStore:
         source: str | None = None,
         git_branch: str | None = None,
     ) -> list[tuple[str, float, dict]]:
+        # cross-process freshness — 다른 프로세스가 BM25를 갱신했으면 reload
+        self._maybe_reload_bm25()
         collection = self._get_collection()
         if collection.count() == 0:
             return []
