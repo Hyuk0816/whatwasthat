@@ -539,13 +539,15 @@ def why(
 def reset(
     force: bool = typer.Option(False, "--force", "-f", help="확인 없이 즉시 삭제"),
 ) -> None:
-    """모든 적재 데이터 삭제 (벡터 DB 초기화)."""
+    """모든 적재 데이터 삭제 (벡터 DB + BM25 캐시 초기화)."""
     import shutil as _shutil
 
     config = _get_config()
     vector_dir = config.chroma_path
+    bm25_dir = config.bm25_index_path.parent
 
-    if not vector_dir.exists():
+    targets = [p for p in (vector_dir, bm25_dir) if p.exists()]
+    if not targets:
         typer.echo("삭제할 데이터가 없습니다.")
         return
 
@@ -555,6 +557,7 @@ def reset(
             typer.echo("취소되었습니다.")
             return
 
-    _shutil.rmtree(vector_dir)
-    typer.echo("✓ 모든 적재 데이터 삭제 완료")
+    for target in targets:
+        _shutil.rmtree(target)
+    typer.echo("✓ 모든 적재 데이터 삭제 완료 (vector + bm25)")
     typer.echo("  다시 적재하려면: wwt setup 또는 wwt ingest <경로>")
