@@ -348,4 +348,23 @@ class VectorStore:
             combined.append((cid, hybrid, vec_metas.get(cid, {})))
 
         combined.sort(key=lambda x: x[1], reverse=True)
-        return combined[:top_k]
+        top_combined = combined[:top_k]
+
+        # Defensive ID filter: ensure every returned ID still exists in ChromaDB.
+        # Protects against stale BM25 cache (phantom IDs that were deleted by another
+        # process) and ChromaDB internal HNSW staleness across processes.
+        if top_combined:
+            try:
+                existing = collection.get(
+                    ids=[cid for cid, _, _ in top_combined],
+                    include=[],  # only need IDs
+                )
+                existing_set = set(existing.get("ids") or [])
+                top_combined = [
+                    (cid, score, meta) for cid, score, meta in top_combined
+                    if cid in existing_set
+                ]
+            except Exception:
+                # Fall back to no filtering rather than crashing
+                pass
+        return top_combined
