@@ -191,6 +191,7 @@ class SearchEngine:
 
         # chunk_id → chunk_data 인덱스 매핑
         id_to_idx: dict[str, int] = {cid: i for i, cid in enumerate(chunk_data["ids"])}
+        existing_chunk_ids: set[str] = set(id_to_idx.keys())
 
         now = datetime.now(timezone.utc)
 
@@ -198,6 +199,10 @@ class SearchEngine:
         session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
         hit_chunk_ids: list[str] = []  # Spaced Repetition: 회수 +1 증가용
         for chunk_id, relevance, _ in hits:
+            # 방어적 skip: vector.search가 phantom ID를 흘려보냈다면 건너뜀
+            # (belt-and-suspenders — vector.py의 defensive filter 다음 2차 방어선)
+            if chunk_id not in existing_chunk_ids:
+                continue
             idx = id_to_idx.get(chunk_id, -1)
             meta = chunk_data["metadatas"][idx] if idx >= 0 and chunk_data["metadatas"] else {}
             doc = chunk_data["documents"][idx] if idx >= 0 and chunk_data["documents"] else ""
