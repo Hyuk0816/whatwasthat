@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from datetime import datetime
 
 from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
@@ -76,11 +77,22 @@ class SearchEngine:
             idx = id_to_idx.get(chunk_id, -1)
             meta = chunk_data["metadatas"][idx] if idx >= 0 and chunk_data["metadatas"] else {}
             doc = chunk_data["documents"][idx] if idx >= 0 and chunk_data["documents"] else ""
+
+            # meta에서 timestamp 복원
+            ts_str = meta.get("timestamp", "")
+            chunk_ts = None
+            if ts_str:
+                try:
+                    chunk_ts = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    chunk_ts = None
+
             chunk = Chunk(
                 id=chunk_id,
                 session_id=meta.get("session_id", ""),
                 turns=[],
                 raw_text=doc,
+                timestamp=chunk_ts,
                 project=meta.get("project", ""),
                 project_path=meta.get("project_path", ""),
                 git_branch=meta.get("git_branch", ""),
@@ -103,6 +115,7 @@ class SearchEngine:
                 project=first_chunk.project,
                 git_branch=first_chunk.git_branch,
                 source=first_chunk.source,
+                started_at=first_chunk.timestamp,
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)

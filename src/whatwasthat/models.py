@@ -54,3 +54,4 @@ class SearchResult(BaseModel):
     project: str = ""
     git_branch: str = ""
     source: str = "claude-code"
+    started_at: datetime | None = None

@@ -48,3 +48,33 @@ class TestMcpServer:
         engine2 = _get_engine()
         assert engine1 is engine2
         _reset_engine()  # cleanup
+
+    def test_search_result_format_includes_timestamp(self, tmp_data_dir, monkeypatch):
+        """검색 결과 출력에 날짜/시간이 포함되어야 한다."""
+        from datetime import datetime, timezone
+
+        import whatwasthat.server.mcp as mcp_module
+        from whatwasthat.models import Chunk, Turn
+        from whatwasthat.search.engine import SearchEngine
+        from whatwasthat.server.mcp import _reset_engine, search_memory
+        from whatwasthat.storage.vector import VectorStore
+
+        _reset_engine()
+
+        vector = VectorStore(tmp_data_dir / "vector")
+        vector.initialize()
+        ts = datetime(2026, 4, 7, 10, 30, 0, tzinfo=timezone.utc)
+        chunks = [
+            Chunk(id="ch1", session_id="s1",
+                  turns=[Turn(role="user", content="DB 선택 논의")],
+                  raw_text="[user]: DB는 Kuzu로 선택했어\n[assistant]: Kuzu는 그래프 DB입니다.",
+                  project="testproj", git_branch="main", timestamp=ts),
+        ]
+        vector.upsert_chunks(chunks)
+
+        # engine 싱글톤을 직접 주입하여 동일한 VectorStore 사용
+        monkeypatch.setattr(mcp_module, "_engine", SearchEngine(vector=vector))
+
+        result = search_memory(query="Kuzu DB", project="testproj", cwd=None)
+        assert "2026-04-07" in result
+        _reset_engine()

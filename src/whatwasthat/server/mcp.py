@@ -5,8 +5,16 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from whatwasthat.config import WwtConfig
+from whatwasthat.models import SearchResult
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.vector import VectorStore
+
+def _format_timestamp(result: SearchResult) -> str:
+    """검색 결과의 타임스탬프를 읽기 좋은 문자열로 포맷."""
+    if result.started_at is None:
+        return ""
+    return f" @ {result.started_at.strftime('%Y-%m-%d %H:%M')}"
+
 
 mcp = FastMCP(
     "whatwasthat",
@@ -82,7 +90,8 @@ def search_memory(
     for i, result in enumerate(results, 1):
         branch = f" ({result.git_branch})" if result.git_branch else ""
         source_tag = f" [{result.source}]" if result.source else ""
-        lines.append(f"{i}. {result.project}{branch}{source_tag} (점수: {result.score:.2f})")
+        ts = _format_timestamp(result)
+        lines.append(f"{i}. {result.project}{branch}{source_tag}{ts} (점수: {result.score:.2f})")
         for chunk in result.chunks[:3]:
             for line in chunk.raw_text.strip().split("\n")[:3]:
                 lines.append(f"   {line[:120]}")
@@ -111,7 +120,8 @@ def search_all(query: str) -> str:
     for i, result in enumerate(results, 1):
         branch = f" ({result.git_branch})" if result.git_branch else ""
         source_tag = f" [{result.source}]" if result.source else ""
-        lines.append(f"{i}. {result.project}{branch}{source_tag} (점수: {result.score:.2f})")
+        ts = _format_timestamp(result)
+        lines.append(f"{i}. {result.project}{branch}{source_tag}{ts} (점수: {result.score:.2f})")
         for chunk in result.chunks[:2]:
             for line in chunk.raw_text.strip().split("\n")[:2]:
                 lines.append(f"   {line[:120]}")
@@ -156,7 +166,8 @@ def search_decision(
     for i, result in enumerate(results, 1):
         branch = f" ({result.git_branch})" if result.git_branch else ""
         source_tag = f" [{result.source}]" if result.source else ""
-        lines.append(f"{i}. {result.project}{branch}{source_tag} (점수: {result.score:.2f})")
+        ts = _format_timestamp(result)
+        lines.append(f"{i}. {result.project}{branch}{source_tag}{ts} (점수: {result.score:.2f})")
         for chunk in result.chunks[:3]:
             for line in chunk.raw_text.strip().split("\n")[:3]:
                 lines.append(f"   {line[:120]}")
