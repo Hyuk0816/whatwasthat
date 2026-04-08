@@ -132,7 +132,8 @@ After `wwt setup`, LLMs call these tools automatically when you mention past con
 
 ```
 You: "How did I set up the Redis cache last time?"
-AI:  [calls search_memory] → Returns 3 relevant conversations with context
+AI:  [calls search_memory] → Returns relevant conversations with timestamps
+     e.g. "backend-api (main) [claude-code] @ 2026-04-07 10:30 (score: 0.91)"
 ```
 
 ### Auto-Capture
@@ -141,9 +142,9 @@ AI:  [calls search_memory] → Returns 3 relevant conversations with context
 
 | Platform | Hook Type | Trigger |
 |----------|-----------|---------|
-| Claude Code | Stop Hook | Session end |
+| Claude Code | Stop Hook | Every response (async) |
 | Gemini CLI | AfterAgent Hook | Agent completion |
-| Codex CLI | Stop Hook | Session end |
+| Codex CLI | Stop Hook | Every response (async) |
 
 ---
 

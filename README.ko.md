@@ -162,6 +162,9 @@ wwt ingest ~/session-abc123.jsonl
 # 현재 프로젝트 맥락으로 검색
 wwt search "Redis 캐시 설정 어떻게 했지?"
 
+# 의사결정 맥락 검색 — 왜 그렇게 했는지?
+wwt why "왜 Redis를 선택했지?"
+
 # 특정 프로젝트에서 검색
 wwt search "mTLS 인증서 설정" --project keylink_service
 
@@ -187,6 +190,7 @@ AI: [search_memory 자동 호출] → 모든 플랫폼의 관련 대화 3개 찾
 |------|------|----------|
 | `search_memory` | 프로젝트/플랫폼/브랜치 조건부 검색 | `project`, `source`, `git_branch`, `cwd` |
 | `search_all` | 조건 없이 전체 통합 검색 | 없음 |
+| `search_decision` | 의사결정 맥락 검색 ("왜 A 대신 B?") | `project`, `source`, `git_branch`, `cwd` |
 | `ingest_session` | 대화 로그 수동 적재 | `path` |
 
 LLM이 사용자 발화에서 자동으로 적절한 도구와 필터를 선택합니다:
@@ -198,11 +202,11 @@ AI: [search_memory(query="Redis 캐시 설정", source="codex-cli") 호출]
 
 → 2개 세션에서 관련 기억을 찾았습니다:
 
-  1. backend-api (main) [codex-cli] (점수: 0.91)
+  1. backend-api (main) [codex-cli] @ 2026-03-15 14:20 (점수: 0.91)
      [user]: Redis 캐시 TTL 어떻게 설정해?
      [assistant]: expire 시간을 3600초로 설정하고, invalidation은 이벤트 기반으로...
 
-  2. backend-api (feature/cache) [codex-cli] (점수: 0.84)
+  2. backend-api (feature/cache) [codex-cli] @ 2026-03-10 09:45 (점수: 0.84)
      [user]: 캐시 무효화 정책 어떻게 하지?
      [assistant]: TTL 기반 + pub/sub 이벤트 조합이 가장 안정적입니다...
 ```
@@ -214,7 +218,7 @@ AI: [search_memory(query="인증", project="frontend", git_branch="main") 호출
 
 → 1개 세션에서 관련 기억을 찾았습니다:
 
-  1. frontend (main) [claude-code] (점수: 0.88)
+  1. frontend (main) [claude-code] @ 2026-04-01 16:30 (점수: 0.88)
      [user]: JWT 토큰 갱신 로직 구현해줘
      [assistant]: refreshToken을 httpOnly 쿠키에 저장하고, accessToken 만료 시...
 ```
@@ -226,15 +230,15 @@ AI: [search_all(query="Docker multi-stage build") 호출]
 
 → 3개 세션에서 관련 기억을 찾았습니다:
 
-  1. backend-api (main) [claude-code] (점수: 0.93)
+  1. backend-api (main) [claude-code] @ 2026-03-20 11:15 (점수: 0.93)
      [user]: Dockerfile 최적화 좀 해줘
      [assistant]: multi-stage build로 변경하면 이미지 크기를 70% 줄일 수 있습니다...
 
-  2. infra (devops) [gemini-cli] (점수: 0.85)
+  2. infra (devops) [gemini-cli] @ 2026-03-18 15:40 (점수: 0.85)
      [user]: CI/CD 파이프라인에서 빌드 시간 줄이는 법
      [assistant]: Docker layer 캐싱과 BuildKit을 활용하면...
 
-  3. frontend (main) [codex-cli] (점수: 0.79)
+  3. frontend (main) [codex-cli] @ 2026-03-12 09:20 (점수: 0.79)
      [user]: 프론트엔드 Docker 이미지 경량화
      [assistant]: nginx:alpine 기반으로 빌드 스테이지 분리하면...
 ```
@@ -245,9 +249,9 @@ AI: [search_all(query="Docker multi-stage build") 호출]
 
 | 플랫폼 | Hook 종류 | 동작 |
 |--------|----------|------|
-| **Claude Code** | Stop Hook | 세션 종료 시 자동 적재 |
+| **Claude Code** | Stop Hook | 매 응답 완료 시 비동기 적재 |
 | **Gemini CLI** | AfterAgent Hook | 에이전트 완료 시 자동 적재 |
-| **Codex CLI** | Stop Hook | 세션 종료 시 자동 적재 |
+| **Codex CLI** | Stop Hook | 매 응답 완료 시 비동기 적재 |
 
 별도 조작 없이 대화가 쌓입니다.
 
