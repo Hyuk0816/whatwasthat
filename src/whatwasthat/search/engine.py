@@ -151,6 +151,10 @@ def _apply_scoring(
 class SearchEngine:
     """벡터 시맨틱 검색 + 세션 그루핑."""
 
+    # Self-ROUTE 라우팅 임계값 (EMNLP 2024)
+    _HIGH_SCORE_THRESHOLD = 0.70  # 이 이상이면 1차 결과로 충분
+    _MEDIUM_SCORE_THRESHOLD = 0.55  # 이 이상이면 decision 모드 병행
+
     def __init__(self, vector: VectorStore) -> None:
         self._vector = vector
 
@@ -267,3 +271,70 @@ class SearchEngine:
             self._vector.increment_access_counts(hit_chunk_ids)
 
         return results
+
+    def search_with_routing(
+        self,
+        query: str,
+        project: str | None = None,
+        top_k: int = 10,
+        source: str | None = None,
+        git_branch: str | None = None,
+        mode: str | None = None,
+    ) -> list[SearchResult]:
+        """Self-ROUTE 스타일 자동 라우팅 (EMNLP 2024).
+
+        1. 기본 검색 시도
+        2. top score >= HIGH: 그대로 반환 (RAG로 충분)
+        3. top score >= MEDIUM: decision 모드도 병행 → 병합
+        4. top score < MEDIUM 또는 결과 없음: 프로젝트 필터 해제 → 전체 검색
+
+        LLM 호출 없이 score 분포만으로 라우팅 판단.
+        """
+        # 1차: 원래 요청 그대로
+        primary = self.search(
+            query, project=project, top_k=top_k,
+            source=source, git_branch=git_branch, mode=mode,
+        )
+
+        top_score = primary[0].score if primary else 0.0
+
+        # HIGH: 그대로 반환
+        if top_score >= self._HIGH_SCORE_THRESHOLD:
+            return primary
+
+        # MEDIUM: decision 모드 병행 (mode가 이미 지정되었으면 스킵)
+        if top_score >= self._MEDIUM_SCORE_THRESHOLD and mode is None:
+            decision_hits = self.search(
+                query, project=project, top_k=top_k,
+                source=source, git_branch=git_branch, mode="decision",
+            )
+            return self._merge_by_session(primary, decision_hits, top_k)
+
+        # LOW: 프로젝트 필터 해제 후 재검색
+        if project is not None:
+            expanded = self.search(
+                query, project=None, top_k=top_k,
+                source=source, git_branch=git_branch, mode=mode,
+            )
+            if expanded:
+                return self._merge_by_session(primary, expanded, top_k)
+
+        # fallback: 1차 결과 그대로 (빈 리스트일 수 있음)
+        return primary
+
+    @staticmethod
+    def _merge_by_session(
+        primary: list[SearchResult],
+        extra: list[SearchResult],
+        top_k: int,
+    ) -> list[SearchResult]:
+        """두 결과 리스트를 세션 ID 기준으로 병합 (중복 제거)."""
+        seen: set[str] = set()
+        merged: list[SearchResult] = []
+        for r in primary + extra:
+            if r.session_id in seen:
+                continue
+            seen.add(r.session_id)
+            merged.append(r)
+        merged.sort(key=lambda r: r.score, reverse=True)
+        return merged[:top_k]
