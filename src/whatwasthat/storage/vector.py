@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import pickle
 from pathlib import Path
 
 import chromadb
 from rank_bm25 import BM25Okapi
 
+import whatwasthat.config as _config_module
 from whatwasthat.config import EMBEDDING_MODEL
 from whatwasthat.embedding import OnnxEmbeddingFunction
 from whatwasthat.models import Chunk
@@ -64,6 +67,7 @@ class VectorStore:
         self._bm25: BM25Okapi | None = None
         self._bm25_ids: list[str] = []
         self._bm25_metas: list[dict] = []
+        self._bm25_version_seen: int = 0
         self._project_cache: set[str] | None = None
 
     def initialize(self) -> None:
@@ -75,7 +79,9 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
             embedding_function=ef,
         )
-        self._build_bm25_index()
+        # 디스크 BM25가 있으면 로드, 없으면 ChromaDB로부터 재빌드
+        if not self._try_load_bm25_from_disk():
+            self._build_bm25_index()
 
     def count(self) -> int:
         """저장된 청크 수 반환."""
@@ -93,6 +99,7 @@ class VectorStore:
             self._bm25 = None
             self._bm25_ids = []
             self._bm25_metas = []
+            self._persist_bm25()
             return
         all_data = collection.get(include=["documents", "metadatas"])
         docs = all_data.get("documents") or []
@@ -100,6 +107,60 @@ class VectorStore:
         self._bm25_metas = all_data.get("metadatas") or []
         tokenized = [_tokenize(doc) for doc in docs]
         self._bm25 = BM25Okapi(tokenized) if tokenized else None
+        self._persist_bm25()
+
+    def _persist_bm25(self) -> None:
+        """BM25 인덱스를 디스크에 원자적으로 저장 (temp + rename).
+
+        호출 측에서 이미 _write_lock을 보유한 상태에서만 호출되어야 한다.
+        """
+        bm25_path: Path = _config_module.BM25_INDEX_PATH
+        version_path: Path = _config_module.BM25_VERSION_PATH
+        bm25_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 1) 인덱스 파일 atomic write
+        tmp_path = bm25_path.with_suffix(".tmp")
+        payload = {
+            "bm25": self._bm25,
+            "ids": self._bm25_ids,
+            "metas": self._bm25_metas,
+        }
+        with open(tmp_path, "wb") as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, bm25_path)  # POSIX atomic rename
+
+        # 2) version 카운터 bump (file write 이후에 해야 reader가 일관성 보장)
+        new_version = self._read_bm25_version() + 1
+        tmp_v = version_path.with_suffix(".tmp")
+        tmp_v.write_text(str(new_version))
+        os.replace(tmp_v, version_path)
+        self._bm25_version_seen = new_version
+
+    @staticmethod
+    def _read_bm25_version() -> int:
+        try:
+            return int(_config_module.BM25_VERSION_PATH.read_text().strip())
+        except (FileNotFoundError, ValueError):
+            return 0
+
+    def _try_load_bm25_from_disk(self) -> bool:
+        """디스크에서 BM25를 로드. 성공 시 True, 실패/없음 시 False."""
+        bm25_path: Path = _config_module.BM25_INDEX_PATH
+        if not bm25_path.exists():
+            return False
+        try:
+            with open(bm25_path, "rb") as f:
+                payload = pickle.load(f)
+            self._bm25 = payload["bm25"]
+            self._bm25_ids = payload["ids"]
+            self._bm25_metas = payload["metas"]
+            self._bm25_version_seen = self._read_bm25_version()
+            return True
+        except Exception:
+            # 손상되었거나 호환 불가 — 재빌드로 fallback
+            return False
 
     def upsert_chunks(self, chunks: list[Chunk], *, rebuild_bm25: bool = True) -> None:
         if not chunks:
