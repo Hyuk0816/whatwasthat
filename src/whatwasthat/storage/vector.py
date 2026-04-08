@@ -122,6 +122,7 @@ class VectorStore:
                     ",".join(sorted({s["language"] for s in c.code_snippets}))
                     if c.code_snippets else ""
                 ),
+                "access_count": c.access_count,  # Spaced Repetition 감쇠율 조절용
             }
             for c in chunks
         ]
@@ -182,6 +183,42 @@ class VectorStore:
             self._build_bm25_index()
 
         return len(changed)
+
+    def increment_access_counts(self, chunk_ids: list[str]) -> None:
+        """주어진 청크들의 access_count를 +1 증가 (Spaced Repetition).
+
+        중복된 ID는 중복만큼 증가 (예: [c1, c1] → c1 +2).
+        존재하지 않는 ID는 무시.
+        """
+        if not chunk_ids:
+            return
+        from collections import Counter
+
+        collection = self._get_collection()
+
+        # 증가분 집계 — 같은 ID가 여러 번 등장하면 합산
+        deltas = Counter(chunk_ids)
+        unique_ids = list(deltas.keys())
+
+        # 현재 메타 조회
+        current = collection.get(ids=unique_ids, include=["metadatas"])
+        if not current["ids"]:
+            return
+
+        # access_count만 변경한 새 메타 구성
+        new_metas: list[dict] = []
+        updated_ids: list[str] = []
+        for cid, meta in zip(current["ids"], current["metadatas"]):
+            if meta is None:
+                continue
+            new_meta = dict(meta)
+            old_count = int(new_meta.get("access_count", 0) or 0)
+            new_meta["access_count"] = old_count + deltas[cid]
+            new_metas.append(new_meta)
+            updated_ids.append(cid)
+
+        if updated_ids:
+            collection.update(ids=updated_ids, metadatas=new_metas)
 
     def _resolve_project(self, project: str) -> str:
         """프로젝트명 퍼지 매칭 — 정확한 이름을 몰라도 찾아줌."""
