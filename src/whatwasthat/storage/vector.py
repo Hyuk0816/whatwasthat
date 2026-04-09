@@ -14,6 +14,7 @@ import whatwasthat.config as _config_module
 from whatwasthat.config import EMBEDDING_MODEL
 from whatwasthat.embedding import OnnxEmbeddingFunction
 from whatwasthat.models import Chunk
+from whatwasthat.timeutil import ensure_utc, to_epoch
 
 _log = logging.getLogger("whatwasthat.vector")
 
@@ -191,9 +192,11 @@ class VectorStore:
                 "chunk_index": c.start_turn_index,  # 세션 내 시작 턴 인덱스
                 "turn_count": len(c.turns),
                 "source": c.source,
-                "timestamp": c.timestamp.isoformat() if c.timestamp else "",
+                "timestamp": (
+                    ensure_utc(c.timestamp).isoformat() if c.timestamp else ""
+                ),
                 # epoch int for native ChromaDB $gte/$lt where-clause range queries
-                "timestamp_epoch": int(c.timestamp.timestamp()) if c.timestamp else 0,
+                "timestamp_epoch": to_epoch(c.timestamp),
                 "has_code": "true" if c.code_snippets else "false",
                 "code_languages": (
                     ",".join(sorted({s["language"] for s in c.code_snippets}))
