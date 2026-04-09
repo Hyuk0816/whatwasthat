@@ -32,6 +32,12 @@ class _IngestStats(TypedDict):
     elapsed_ms: int
 
 
+# ONNX 임베딩 배치 크기 — 메모리 피크 제한 (v1.0.11.1)
+# 1694 청크를 한 번에 upsert하면 ChromaDB가 단일 ONNX forward로 처리해 GB 단위
+# 메모리를 요구함. 64 배치로 쪼개면 피크 ~100MB로 떨어져 스와핑을 방지한다.
+_BULK_EMBED_BATCH_SIZE = 64
+
+
 def _bulk_ingest_directory(
     vector: VectorStore,
     directory: Path,
@@ -119,10 +125,25 @@ def _bulk_ingest_directory(
         typer.echo(f"✓ [{label}] no chunks to ingest ({parse_ms} ms)")
         return stats
 
-    # Single bulk upsert → ONNX batching efficiency
+    # Batched upsert — ONNX 임베딩 메모리 피크 제한
+    # _BULK_EMBED_BATCH_SIZE 단위로 쪼개 upsert해 메모리 피크를 선형에서 상수로 낮춘다.
     embed_start = time.monotonic()
-    typer.echo(f"  [{label}] embedding {len(all_chunks)} chunks in bulk...")
-    vector.upsert_chunks(all_chunks, rebuild_bm25=False)
+    total_chunks = len(all_chunks)
+    typer.echo(
+        f"  [{label}] embedding {total_chunks} chunks "
+        f"(batch={_BULK_EMBED_BATCH_SIZE})...",
+    )
+    next_report = max(1, total_chunks // 10)
+    for i in range(0, total_chunks, _BULK_EMBED_BATCH_SIZE):
+        batch = all_chunks[i : i + _BULK_EMBED_BATCH_SIZE]
+        vector.upsert_chunks(batch, rebuild_bm25=False)
+        done = min(i + _BULK_EMBED_BATCH_SIZE, total_chunks)
+        if done >= next_report or done == total_chunks:
+            pct = done * 100 // total_chunks
+            typer.echo(
+                f"  [{label}] embedded {pct}% ({done}/{total_chunks})",
+            )
+            next_report = done + max(1, total_chunks // 10)
     embed_ms = int((time.monotonic() - embed_start) * 1000)
 
     if rebuild_at_end:
