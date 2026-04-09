@@ -515,8 +515,8 @@ exit 0
 
 
 @app.command()
-def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경로")) -> None:
-    """대화 로그를 벡터 DB로 적재."""
+def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> None:
+    """Ingest conversation logs into the vector store."""
     config = _get_config()
     file_path = Path(path).expanduser()
 
@@ -528,62 +528,33 @@ def ingest(path: str = typer.Argument(help="JSONL 파일 또는 디렉토리 경
     vector.initialize()
 
     if file_path.is_dir():
-        sessions: dict[str, list] = {}
-        meta_map: dict = {}
-        for f in sorted(file_path.rglob("*")):
-            if f.is_file() and f.suffix in (".jsonl", ".json"):
-                parser = detect_parser(f)
-                if parser is None:
-                    continue
-                sid = f.stem
-                turns = parser.parse_turns(f)
-                if turns:
-                    sessions[sid] = turns
-                    meta_map[sid] = parser.parse_meta(f)
-    else:
-        parser = detect_parser(file_path)
-        if parser is None:
-            typer.echo(f"지원하지 않는 파일 형식: {file_path}")
-            return
-        session_id = file_path.stem
-        sessions = {session_id: parser.parse_turns(file_path)}
-        meta_map = {session_id: parser.parse_meta(file_path)}
-
-    # 세션별 파싱 → 청크 수집 → 벌크 upsert (BM25는 마지막에 1회)
-    is_bulk = len(sessions) > 1
-    total = len(sessions)
-    all_chunks: list = []
-    session_count = 0
-    for si, (session_id, turns) in enumerate(sessions.items(), 1):
-        if not turns:
-            continue
-        meta = meta_map.get(session_id)
-        chunks = chunk_turns(turns, session_id=session_id, meta=meta)
-        if not chunks:
-            continue
-        if is_bulk:
-            all_chunks.extend(chunks)
-            session_count += 1
-        else:
-            # 단일 세션: 증분 upsert (변경 감지 활용)
-            embedded = vector.upsert_session_chunks(
-                session_id, chunks, rebuild_bm25=True,
-            )
-            typer.echo(f"\n완료: 1 세션, {len(chunks)} 청크 ({embedded} 신규 임베딩)")
-            return
-        if si % 50 == 0 or si == total:
-            typer.echo(f"  파싱: {si}/{total} 세션, {len(all_chunks)} 청크")
-
-    if not all_chunks:
-        typer.echo("적재할 청크가 없습니다.")
+        # Delegate to the shared bulk helper (parse + chunk + single upsert + BM25).
+        _bulk_ingest_directory(
+            vector,
+            file_path,
+            patterns=["**/*.jsonl", "**/*.json"],
+            label=file_path.name or "ingest",
+            rebuild_at_end=True,
+        )
         return
 
-    # 벌크 모드: 전체 청크를 한 번에 upsert → ONNX 배치 효율 극대화
-    typer.echo(f"  임베딩: {len(all_chunks)} 청크 일괄 처리 중...")
-    vector.upsert_chunks(all_chunks, rebuild_bm25=False)
-    vector.rebuild_index()
-
-    typer.echo(f"\n완료: {session_count} 세션, {len(all_chunks)} 청크 (벌크 임베딩)")
+    # Single file — keep incremental upsert path (change-detection benefit).
+    parser = detect_parser(file_path)
+    if parser is None:
+        typer.echo(f"Unsupported file format: {file_path}")
+        return
+    session_id = file_path.stem
+    turns = parser.parse_turns(file_path)
+    if not turns:
+        typer.echo("No turns parsed.")
+        return
+    meta = parser.parse_meta(file_path)
+    chunks = chunk_turns(turns, session_id=session_id, meta=meta)
+    if not chunks:
+        typer.echo("No chunks produced.")
+        return
+    embedded = vector.upsert_session_chunks(session_id, chunks, rebuild_bm25=True)
+    typer.echo(f"Done: 1 session, {len(chunks)} chunks ({embedded} freshly embedded)")
 
 
 @app.command()
