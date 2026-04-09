@@ -345,6 +345,8 @@ class VectorStore:
         project: str | None = None,
         source: str | None = None,
         git_branch: str | None = None,
+        since_epoch: int | None = None,
+        until_epoch: int | None = None,
     ) -> list[tuple[str, float, dict]]:
         # cross-process freshness — 다른 프로세스가 BM25를 갱신했으면 reload
         self._maybe_reload_bm25()
@@ -360,13 +362,17 @@ class VectorStore:
         candidate_k = min(top_k * 3, collection.count())
 
         # 1. 벡터 검색
-        filters: list[dict[str, str]] = []
+        filters: list[dict] = []
         if project:
             filters.append({"project": project})
         if source:
             filters.append({"source": source})
         if git_branch:
             filters.append({"git_branch": git_branch})
+        if since_epoch is not None:
+            filters.append({"timestamp_epoch": {"$gte": since_epoch}})
+        if until_epoch is not None:
+            filters.append({"timestamp_epoch": {"$lt": until_epoch}})
 
         if len(filters) > 1:
             where = {"$and": filters}
@@ -419,6 +425,12 @@ class VectorStore:
                     for k, v in _active_filters.items()
                 ):
                     continue
+                # Epoch range post-filter (for fallback path where where=None)
+                ep = int(meta.get("timestamp_epoch", 0) or 0)
+                if since_epoch is not None and ep < since_epoch:
+                    continue
+                if until_epoch is not None and ep >= until_epoch:
+                    continue
                 vec_scores[chunk_id] = max(0.0, 1.0 - distance)
                 vec_metas[chunk_id] = meta
 
@@ -442,6 +454,12 @@ class VectorStore:
                     if source and meta.get("source") != source:
                         continue
                     if git_branch and meta.get("git_branch") != git_branch:
+                        continue
+                    # Epoch range filter
+                    ep = int(meta.get("timestamp_epoch", 0) or 0)
+                    if since_epoch is not None and ep < since_epoch:
+                        continue
+                    if until_epoch is not None and ep >= until_epoch:
                         continue
                     bm25_scores[cid] = score / max_bm25
                     if cid not in vec_metas:
