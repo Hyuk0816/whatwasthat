@@ -568,6 +568,7 @@ def migrate() -> None:
     from datetime import datetime
 
     from whatwasthat.storage.vector import VectorStore
+    from whatwasthat.timeutil import to_epoch
 
     config = _get_config()
     vector = VectorStore(config.chroma_path)
@@ -600,7 +601,7 @@ def migrate() -> None:
         except ValueError:
             continue
         new_meta = dict(meta)
-        new_meta["timestamp_epoch"] = int(ts.timestamp())
+        new_meta["timestamp_epoch"] = to_epoch(ts)
         to_update_ids.append(cid)
         to_update_metas.append(new_meta)
 
