@@ -622,6 +622,9 @@ def search(
     ),
     branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
     mode: str = typer.Option(None, "--mode", "-m", help="검색 모드 (decision, code)"),
+    date: str = typer.Option(
+        None, "--date", "-d", help="날짜 필터 (YYYY-MM-DD, UTC)",
+    ),
 ) -> None:
     """과거 대화에서 관련 기억 검색."""
     config = _get_config()
@@ -635,7 +638,8 @@ def search(
     engine = SearchEngine(vector=vector)
     filter_project = None if all_projects else project
     results = engine.search(
-        query, project=filter_project, source=source, git_branch=branch, mode=mode,
+        query, project=filter_project, source=source, git_branch=branch,
+        mode=mode, date=date,
     )
 
     if not results:
