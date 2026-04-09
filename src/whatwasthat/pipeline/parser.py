@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
@@ -392,9 +392,9 @@ class GeminiCliParser:
             try:
                 started_at = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
             except ValueError:
-                started_at = datetime.now()
+                started_at = datetime.now(timezone.utc)
         else:
-            started_at = datetime.now()
+            started_at = datetime.now(timezone.utc)
 
         return SessionMeta(
             session_id=session_id,
@@ -432,7 +432,7 @@ class GeminiCliParser:
         if not session_id:
             session_id = file_path.stem
         if not started_at:
-            started_at = datetime.now()
+            started_at = datetime.now(timezone.utc)
 
         turns = self._parse_jsonl(file_path)
         return SessionMeta(
@@ -557,7 +557,7 @@ class CodexCliParser:
         if not session_id:
             session_id = file_path.stem
         if not started_at:
-            started_at = datetime.now()
+            started_at = datetime.now(timezone.utc)
 
         project = Path(cwd).name if cwd else ""
         turns = self.parse_turns(file_path)
