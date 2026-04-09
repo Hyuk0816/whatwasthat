@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
 import typer
 
 from whatwasthat.config import WwtConfig
+
+if TYPE_CHECKING:
+    from whatwasthat.storage.vector import VectorStore
 
 app = typer.Typer(
     name="wwt",
@@ -18,6 +23,127 @@ def _get_config() -> WwtConfig:
     config = WwtConfig()
     config.data_dir.mkdir(parents=True, exist_ok=True)
     return config
+
+
+class _IngestStats(TypedDict):
+    sessions: int
+    chunks: int
+    embedded: int
+    elapsed_ms: int
+
+
+def _bulk_ingest_directory(
+    vector: VectorStore,
+    directory: Path,
+    patterns: list[str],
+    label: str,
+    *,
+    rebuild_at_end: bool = True,
+) -> _IngestStats:
+    """Shared bulk-ingest helper used by both `setup` and `ingest` commands.
+
+    Reads every file under `directory` matching any of the `patterns`, parses
+    sessions, chunks them, and performs a SINGLE `vector.upsert_chunks(...)`
+    call with `rebuild_bm25=False` so the ONNX embedding pipeline batches all
+    documents at once. BM25 rebuild is deferred to the end (if requested) so
+    large ingests stay cheap.
+
+    Args:
+        vector: initialized VectorStore
+        directory: directory to scan (may be missing — silently noop)
+        patterns: list of glob patterns (e.g. ["**/*.jsonl"])
+        label: human-readable platform name for progress messages
+        rebuild_at_end: if True, call vector.rebuild_index() after upsert
+
+    Returns:
+        Stats dict: sessions / chunks / embedded / elapsed_ms
+    """
+    # Late imports to avoid circular dependencies and keep cold-import cheap.
+    from whatwasthat.pipeline.chunker import chunk_turns
+    from whatwasthat.pipeline.parser import detect_parser
+
+    start = time.monotonic()
+    stats: _IngestStats = {
+        "sessions": 0, "chunks": 0, "embedded": 0, "elapsed_ms": 0,
+    }
+
+    if not directory.is_dir():
+        stats["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+        return stats
+
+    files: list[Path] = []
+    for pattern in patterns:
+        files.extend(directory.glob(pattern))
+    files = sorted({f for f in files if f.is_file()})
+
+    if not files:
+        typer.echo(
+            f"ℹ [{label}] no existing sessions — will ingest on next turn",
+        )
+        stats["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+        return stats
+
+    total = len(files)
+    typer.echo(f"\n[{label}] ingesting {total} sessions...")
+
+    all_chunks: list = []
+    session_count = 0
+    parse_start = time.monotonic()
+
+    for i, f in enumerate(files, 1):
+        parser = detect_parser(f)
+        if parser is None:
+            continue
+        turns = parser.parse_turns(f)
+        if not turns:
+            continue
+        meta = parser.parse_meta(f)
+        chunks = chunk_turns(turns, session_id=f.stem, meta=meta)
+        if not chunks:
+            continue
+        all_chunks.extend(chunks)
+        session_count += 1
+
+        # Progress at every ~10% or at the last file
+        if i == total or i % max(1, total // 10) == 0:
+            pct = i * 100 // total
+            typer.echo(
+                f"  [{label}] parse {pct}% ({i}/{total}) — "
+                f"{session_count} sessions, {len(all_chunks)} chunks",
+            )
+
+    parse_ms = int((time.monotonic() - parse_start) * 1000)
+
+    if not all_chunks:
+        stats["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+        typer.echo(f"✓ [{label}] no chunks to ingest ({parse_ms} ms)")
+        return stats
+
+    # Single bulk upsert → ONNX batching efficiency
+    embed_start = time.monotonic()
+    typer.echo(f"  [{label}] embedding {len(all_chunks)} chunks in bulk...")
+    vector.upsert_chunks(all_chunks, rebuild_bm25=False)
+    embed_ms = int((time.monotonic() - embed_start) * 1000)
+
+    if rebuild_at_end:
+        rebuild_start = time.monotonic()
+        vector.rebuild_index()
+        rebuild_ms = int((time.monotonic() - rebuild_start) * 1000)
+    else:
+        rebuild_ms = 0
+
+    total_ms = int((time.monotonic() - start) * 1000)
+    stats["sessions"] = session_count
+    stats["chunks"] = len(all_chunks)
+    stats["embedded"] = len(all_chunks)  # bulk path: every chunk is freshly embedded
+    stats["elapsed_ms"] = total_ms
+
+    suffix = f" · bm25 {rebuild_ms} ms" if rebuild_at_end else ""
+    typer.echo(
+        f"✓ [{label}] done: {session_count} sessions, {len(all_chunks)} chunks "
+        f"— parse {parse_ms} ms · embed {embed_ms} ms{suffix} · total {total_ms} ms",
+    )
+    return stats
 
 
 @app.command()
