@@ -372,21 +372,51 @@ class VectorStore:
             where = filters[0]
         else:
             where = None
-        vec_results = collection.query(
-            query_texts=[query],
-            n_results=candidate_k,
-            where=where,
-            include=["metadatas", "distances"],
-        )
+        try:
+            vec_results = collection.query(
+                query_texts=[query],
+                n_results=candidate_k,
+                where=where,
+                include=["metadatas", "distances"],
+            )
+        except Exception:
+            # ChromaDB HNSW can throw "Error finding id" when internal index
+            # references deleted entries while a metadata filter is active.
+            # Fallback: query without filter, post-filter in Python below.
+            if where is not None:
+                _log.warning(
+                    "ChromaDB query failed with where=%s, retrying without filter",
+                    where,
+                )
+                vec_results = collection.query(
+                    query_texts=[query],
+                    n_results=candidate_k,
+                    where=None,
+                    include=["metadatas", "distances"],
+                )
+            else:
+                raise  # no filter to drop — genuine error
 
         vec_scores: dict[str, float] = {}
         vec_metas: dict[str, dict] = {}
+        _active_filters = {
+            "project": project,
+            "source": source,
+            "git_branch": git_branch,
+        }
         if vec_results["ids"] and vec_results["distances"]:
             for chunk_id, distance, meta in zip(
                 vec_results["ids"][0],
                 vec_results["distances"][0],
                 vec_results["metadatas"][0],
             ):
+                # Post-filter: when fallback dropped the where clause,
+                # enforce filters in Python so results stay correct.
+                if any(
+                    v is not None and meta.get(k) != v
+                    for k, v in _active_filters.items()
+                ):
+                    continue
                 vec_scores[chunk_id] = max(0.0, 1.0 - distance)
                 vec_metas[chunk_id] = meta
 
