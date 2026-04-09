@@ -166,9 +166,27 @@ class SearchEngine:
         source: str | None = None,
         git_branch: str | None = None,
         mode: str | None = None,
+        date: str | None = None,
     ) -> list[SearchResult]:
+        # Convenience: "YYYY-MM-DD" → UTC 하루 범위 epoch로 변환
+        since_epoch: int | None = None
+        until_epoch: int | None = None
+        if date:
+            from datetime import timedelta
+            try:
+                day_start = datetime.strptime(date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc,
+                )
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid date format (expected YYYY-MM-DD): {date}",
+                ) from e
+            since_epoch = int(day_start.timestamp())
+            until_epoch = int((day_start + timedelta(days=1)).timestamp())
+
         hits = self._vector.search(
             query, top_k=top_k, project=project, source=source, git_branch=git_branch,
+            since_epoch=since_epoch, until_epoch=until_epoch,
         )
         if not hits:
             return []
@@ -285,6 +303,7 @@ class SearchEngine:
         source: str | None = None,
         git_branch: str | None = None,
         mode: str | None = None,
+        date: str | None = None,
     ) -> list[SearchResult]:
         """Self-ROUTE 스타일 자동 라우팅 (EMNLP 2024).
 
@@ -294,11 +313,12 @@ class SearchEngine:
         4. top score < MEDIUM 또는 결과 없음: 프로젝트 필터 해제 → 전체 검색
 
         LLM 호출 없이 score 분포만으로 라우팅 판단.
+        date 파라미터는 모든 하위 search 호출에 그대로 전파.
         """
         # 1차: 원래 요청 그대로
         primary = self.search(
             query, project=project, top_k=top_k,
-            source=source, git_branch=git_branch, mode=mode,
+            source=source, git_branch=git_branch, mode=mode, date=date,
         )
 
         top_score = primary[0].score if primary else 0.0
@@ -311,7 +331,7 @@ class SearchEngine:
         if top_score >= self._MEDIUM_SCORE_THRESHOLD and mode is None:
             decision_hits = self.search(
                 query, project=project, top_k=top_k,
-                source=source, git_branch=git_branch, mode="decision",
+                source=source, git_branch=git_branch, mode="decision", date=date,
             )
             return self._merge_by_session(primary, decision_hits, top_k)
 
@@ -319,7 +339,7 @@ class SearchEngine:
         if project is not None:
             expanded = self.search(
                 query, project=None, top_k=top_k,
-                source=source, git_branch=git_branch, mode=mode,
+                source=source, git_branch=git_branch, mode=mode, date=date,
             )
             if expanded:
                 return self._merge_by_session(primary, expanded, top_k)
