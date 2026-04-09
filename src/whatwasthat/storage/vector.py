@@ -192,6 +192,8 @@ class VectorStore:
                 "turn_count": len(c.turns),
                 "source": c.source,
                 "timestamp": c.timestamp.isoformat() if c.timestamp else "",
+                # epoch int for native ChromaDB $gte/$lt where-clause range queries
+                "timestamp_epoch": int(c.timestamp.timestamp()) if c.timestamp else 0,
                 "has_code": "true" if c.code_snippets else "false",
                 "code_languages": (
                     ",".join(sorted({s["language"] for s in c.code_snippets}))
