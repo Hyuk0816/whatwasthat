@@ -440,79 +440,28 @@ exit 0
         else:
             typer.echo("✓ Codex CLI MCP 서버 이미 등록됨")
 
-    # 5. 기존 세션 자동 적재 (순차, 플랫폼별 진행 표시)
-    from whatwasthat.pipeline.chunker import chunk_turns
-    from whatwasthat.pipeline.parser import detect_parser
-
-    def _ingest_platform(
-        label: str, directory: Path, patterns: list[str],
-    ) -> None:
-        """플랫폼별 기존 세션을 순차 적재 (진행 표시 포함)."""
-        if not directory.is_dir():
-            return
-
-        files: list[Path] = []
-        for pattern in patterns:
-            files.extend(directory.glob(pattern))
-        files = sorted(set(f for f in files if f.is_file()))
-
-        if not files:
-            typer.echo(f"ℹ {label} 대화 기록 없음 — 새 대화 후 자동 적재됩니다")
-            return
-
-        typer.echo(f"\n[{label}] {len(files)}개 세션 적재 중...")
-        total = len(files)
-        session_count = 0
-        total_chunks = 0
-        total_embedded = 0
-
-        for i, f in enumerate(files, 1):
-            parser = detect_parser(f)
-            if parser is None:
-                continue
-            turns = parser.parse_turns(f)
-            if not turns:
-                continue
-            meta = parser.parse_meta(f)
-            chunks = chunk_turns(turns, session_id=f.stem, meta=meta)
-            if not chunks:
-                continue
-            embedded = vector.upsert_session_chunks(
-                f.stem, chunks, rebuild_bm25=False,
-            )
-            session_count += 1
-            total_chunks += len(chunks)
-            total_embedded += embedded
-
-            # 진행 표시 (10% 단위 + 마지막)
-            if i == total or i % max(1, total // 10) == 0:
-                pct = i * 100 // total
-                typer.echo(
-                    f"  [{label}] {pct}% ({i}/{total}) — {session_count} 세션, {total_chunks} 청크"
-                )
-
-        if total_chunks:
-            vector.rebuild_index()
-        msg = (
-            f"✓ [{label}] 완료: {session_count} 세션, "
-            f"{total_chunks} 청크 ({total_embedded} 신규 임베딩)"
-        )
-        typer.echo(msg)
-
-    _ingest_platform(
-        "Claude Code",
+    # 5. Auto-ingest existing sessions per platform via the shared bulk helper.
+    # BM25 rebuild is deferred to the last platform call for efficiency.
+    _bulk_ingest_directory(
+        vector,
         Path.home() / ".claude" / "projects",
-        ["**/*.jsonl"],
+        patterns=["**/*.jsonl"],
+        label="Claude Code",
+        rebuild_at_end=False,
     )
-    _ingest_platform(
-        "Gemini CLI",
+    _bulk_ingest_directory(
+        vector,
         Path.home() / ".gemini" / "tmp",
-        ["**/chats/*.json"],
+        patterns=["**/chats/*.json"],
+        label="Gemini CLI",
+        rebuild_at_end=False,
     )
-    _ingest_platform(
-        "Codex CLI",
+    _bulk_ingest_directory(
+        vector,
         Path.home() / ".codex" / "sessions",
-        ["**/*.jsonl"],
+        patterns=["**/*.jsonl"],
+        label="Codex CLI",
+        rebuild_at_end=True,  # last platform: rebuild BM25 once at the very end
     )
 
     # 6. Gemini CLI Hook 설치 (Gemini CLI가 설치된 경우)
