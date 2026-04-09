@@ -11,13 +11,14 @@ import whatwasthat.config as _config_module
 from whatwasthat.models import SearchResult
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.vector import VectorStore
+from whatwasthat.timeutil import format_kst
 
 
 def _format_timestamp(result: SearchResult) -> str:
     """검색 결과의 타임스탬프를 읽기 좋은 문자열로 포맷."""
     if result.started_at is None:
         return ""
-    return f" @ {result.started_at.strftime('%Y-%m-%d %H:%M')}"
+    return f" @ {format_kst(result.started_at)}"
 
 
 mcp = FastMCP(
