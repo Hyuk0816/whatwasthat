@@ -158,18 +158,42 @@ def init() -> None:
 
 
 def _install_codex_hook(hooks_dir: Path) -> Path:
-    """Codex CLI Stop hook 스크립트 생성."""
+    """Codex CLI Stop hook 스크립트 생성.
+
+    Codex Stop payload:
+      session_id, transcript_path, cwd, hook_event_name, model, turn_id,
+      stop_hook_active, last_assistant_message
+    """
     import shutil
     hooks_dir.mkdir(parents=True, exist_ok=True)
     script = hooks_dir / "codex_ingest.sh"
     wwt_path = shutil.which("wwt") or "wwt"
     script.write_text(f"""#!/bin/bash
 INPUT=$(cat)
+LOG="$HOME/.wwt/ingest.log"
+TS=$(date +%Y-%m-%dT%H:%M:%S%z)
+
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+TURN_ID=$(echo "$INPUT" | jq -r '.turn_id // empty')
+PROJECT=$(basename "$CWD")
+
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+    echo "$TS source=codex-cli project=$PROJECT" \
+         "session=$SESSION_ID status=skip_no_transcript" >> "$LOG"
     exit 0
 fi
-{wwt_path} ingest "$TRANSCRIPT_PATH" >> "$HOME/.wwt/ingest.log" 2>&1 &
+
+(
+  echo "$TS source=codex-cli project=$PROJECT" \
+       "session=$SESSION_ID turn=$TURN_ID" \
+       "transcript=$TRANSCRIPT_PATH status=ingest_start"
+  {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
+  TS_DONE=$(date +%Y-%m-%dT%H:%M:%S%z)
+  echo "$TS_DONE source=codex-cli project=$PROJECT" \
+       "session=$SESSION_ID status=ingest_done"
+) >> "$LOG" &
 exit 0
 """)
     script.chmod(0o755)
