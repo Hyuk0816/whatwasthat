@@ -558,6 +558,61 @@ def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> N
 
 
 @app.command()
+def migrate() -> None:
+    """Backfill missing timestamp_epoch metadata on existing chunks.
+
+    Scans every stored chunk and, for any that has timestamp_epoch=0 but a
+    non-empty ISO timestamp field, back-computes the epoch and updates metadata
+    in place. No re-embedding — only metadata update via collection.update.
+    """
+    from datetime import datetime
+
+    from whatwasthat.storage.vector import VectorStore
+
+    config = _get_config()
+    vector = VectorStore(config.chroma_path)
+    vector.initialize()
+    coll = vector._get_collection()
+
+    total = coll.count()
+    if total == 0:
+        typer.echo("No chunks to migrate.")
+        return
+
+    typer.echo(f"Scanning {total} chunks for missing timestamp_epoch...")
+    all_data = coll.get(include=["metadatas"])
+    ids = all_data.get("ids") or []
+    metas = all_data.get("metadatas") or []
+
+    to_update_ids: list[str] = []
+    to_update_metas: list[dict] = []
+    for cid, meta in zip(ids, metas):
+        if meta is None:
+            continue
+        current_epoch = int(meta.get("timestamp_epoch", 0) or 0)
+        if current_epoch != 0:
+            continue
+        iso = meta.get("timestamp", "")
+        if not iso:
+            continue
+        try:
+            ts = datetime.fromisoformat(iso)
+        except ValueError:
+            continue
+        new_meta = dict(meta)
+        new_meta["timestamp_epoch"] = int(ts.timestamp())
+        to_update_ids.append(cid)
+        to_update_metas.append(new_meta)
+
+    if not to_update_ids:
+        typer.echo("All chunks already have timestamp_epoch populated.")
+        return
+
+    coll.update(ids=to_update_ids, metadatas=to_update_metas)
+    typer.echo(f"✓ Backfilled {len(to_update_ids)}/{total} chunks.")
+
+
+@app.command()
 def search(
     query: str = typer.Argument(help="검색 쿼리"),
     project: str = typer.Option(None, "--project", "-p", help="프로젝트 필터"),
