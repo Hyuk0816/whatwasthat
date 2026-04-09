@@ -28,7 +28,9 @@ mcp = FastMCP(
         "사용자가 과거 대화, 이전 작업, 의사결정 이유를 물을 때도 이 도구를 사용하세요. "
         "예: '그때 그거 뭐였지?', '이전에 어떻게 했지?', '왜 Redis를 선택했지?' 등. "
         "search_memory는 현재 프로젝트 맥락으로, search_all은 모든 프로젝트에서, "
-        "search_decision은 의사결정 맥락(왜 A 대신 B를 선택했는지)을 검색합니다."
+        "search_decision은 의사결정 맥락(왜 A 대신 B를 선택했는지)을 검색합니다. "
+        "특정 날짜 세션만 조회하려면 모든 search 도구에 "
+        "date='YYYY-MM-DD' (UTC) 파라미터를 전달하세요."
     ),
 )
 
@@ -79,6 +81,7 @@ def search_memory(
     cwd: str | None = None,
     source: str | None = None,
     git_branch: str | None = None,
+    date: str | None = None,
 ) -> str:
     """프로젝트, 플랫폼, 브랜치 등 특정 조건으로 과거 대화를 검색합니다.
 
@@ -92,6 +95,7 @@ def search_memory(
         source: 플랫폼 필터 — "claude-code" (클로드),
             "gemini-cli" (제미나이), "codex-cli" (코덱스)
         git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth")
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (UTC). 해당 날짜 세션만 반환.
     """
     engine = _get_engine()
 
@@ -104,6 +108,7 @@ def search_memory(
     # Self-ROUTE 자동 라우팅: 1차 결과 점수에 따라 확장 여부 결정
     results = engine.search_with_routing(
         query, project=filter_project, source=source, git_branch=git_branch,
+        date=date,
     )
 
     if not results:
@@ -126,15 +131,16 @@ def search_memory(
 
 
 @mcp.tool()
-def search_all(query: str) -> str:
+def search_all(query: str, date: str | None = None) -> str:
     """특정 프로젝트, 플랫폼, 브랜치를 언급하지 않고 과거 대화를 검색할 때 사용합니다.
     모든 프로젝트, 모든 플랫폼에서 통합 검색합니다.
 
     Args:
         query: 검색할 내용 (예: "전에 했던 Redis 설정", "비슷한 버그 해결")
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (UTC). 해당 날짜 세션만 반환.
     """
     engine = _get_engine()
-    results = engine.search(query, project=None)
+    results = engine.search(query, project=None, date=date)
 
     if not results:
         return "관련 기억을 찾지 못했습니다."
@@ -162,6 +168,7 @@ def search_decision(
     cwd: str | None = None,
     source: str | None = None,
     git_branch: str | None = None,
+    date: str | None = None,
 ) -> str:
     """의사결정 맥락을 검색합니다. '왜 A 대신 B를 선택했지?' 같은 질문에 사용하세요.
 
@@ -171,6 +178,7 @@ def search_decision(
         cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
         source: 플랫폼 필터 — "claude-code", "gemini-cli", "codex-cli"
         git_branch: 특정 Git 브랜치로 필터링
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (UTC). 해당 날짜 세션만 반환.
     """
     engine = _get_engine()
 
@@ -179,7 +187,8 @@ def search_decision(
         filter_project = cwd.rstrip("/").split("/")[-1]
 
     results = engine.search(
-        query, project=filter_project, source=source, git_branch=git_branch, mode="decision",
+        query, project=filter_project, source=source, git_branch=git_branch,
+        mode="decision", date=date,
     )
 
     if not results:
