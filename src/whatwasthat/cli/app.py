@@ -171,7 +171,7 @@ def _install_codex_hook(hooks_dir: Path) -> Path:
     script.write_text(f"""#!/bin/bash
 INPUT=$(cat)
 LOG="$HOME/.wwt/ingest.log"
-TS=$(date +%Y-%m-%dT%H:%M:%S%z)
+TS=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
@@ -181,7 +181,8 @@ PROJECT=$(basename "$CWD")
 
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     echo "$TS source=codex-cli project=$PROJECT" \
-         "session=$SESSION_ID status=skip_no_transcript" >> "$LOG"
+         "session=$SESSION_ID status=skip_no_transcript" \
+         "reason=missing_or_invalid_transcript" >> "$LOG"
     exit 0
 fi
 
@@ -190,7 +191,7 @@ fi
        "session=$SESSION_ID turn=$TURN_ID" \
        "transcript=$TRANSCRIPT_PATH status=ingest_start"
   {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(date +%Y-%m-%dT%H:%M:%S%z)
+  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
   echo "$TS_DONE source=codex-cli project=$PROJECT" \
        "session=$SESSION_ID status=ingest_done"
 ) >> "$LOG" &
@@ -210,7 +211,7 @@ def _install_gemini_hook(hooks_dir: Path) -> Path:
 INPUT=$(cat)
 echo '{{"decision": "allow"}}'
 LOG="$HOME/.wwt/ingest.log"
-TS=$(date +%Y-%m-%dT%H:%M:%S%z)
+TS=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
@@ -219,7 +220,8 @@ PROJECT=$(basename "$CWD")
 
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     echo "$TS source=gemini-cli project=$PROJECT" \
-         "session=$SESSION_ID status=skip_no_transcript" >> "$LOG"
+         "session=$SESSION_ID status=skip_no_transcript" \
+         "reason=missing_or_invalid_transcript" >> "$LOG"
     exit 0
 fi
 
@@ -228,7 +230,7 @@ fi
        "session=$SESSION_ID" \
        "transcript=$TRANSCRIPT_PATH status=ingest_start"
   {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(date +%Y-%m-%dT%H:%M:%S%z)
+  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
   echo "$TS_DONE source=gemini-cli project=$PROJECT" \
        "session=$SESSION_ID status=ingest_done"
 ) >> "$LOG" &
@@ -305,7 +307,7 @@ def setup() -> None:
     hook_content = f"""#!/bin/bash
 INPUT=$(cat)
 LOG="$HOME/.wwt/ingest.log"
-TS=$(date +%Y-%m-%dT%H:%M:%S%z)
+TS=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
@@ -314,7 +316,8 @@ PROJECT=$(basename "$CWD")
 
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     echo "$TS source=claude-code project=$PROJECT" \
-         "session=$SESSION_ID status=skip_no_transcript" >> "$LOG"
+         "session=$SESSION_ID status=skip_no_transcript" \
+         "reason=missing_or_invalid_transcript" >> "$LOG"
     exit 0
 fi
 
@@ -323,7 +326,7 @@ fi
        "session=$SESSION_ID" \
        "transcript=$TRANSCRIPT_PATH status=ingest_start"
   {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(date +%Y-%m-%dT%H:%M:%S%z)
+  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
   echo "$TS_DONE source=claude-code project=$PROJECT" \
        "session=$SESSION_ID status=ingest_done"
 ) >> "$LOG" &
