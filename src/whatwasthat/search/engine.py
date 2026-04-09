@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
+from whatwasthat.timeutil import kst_day_bounds
 
 # 최소 유사도 점수 — 이 이하는 관련 없는 결과로 간주
 _MIN_SCORE = 0.5
@@ -172,17 +173,12 @@ class SearchEngine:
         since_epoch: int | None = None
         until_epoch: int | None = None
         if date:
-            from datetime import timedelta
             try:
-                day_start = datetime.strptime(date, "%Y-%m-%d").replace(
-                    tzinfo=timezone.utc,
-                )
+                since_epoch, until_epoch = kst_day_bounds(date)
             except ValueError as e:
                 raise ValueError(
                     f"Invalid date format (expected YYYY-MM-DD): {date}",
                 ) from e
-            since_epoch = int(day_start.timestamp())
-            until_epoch = int((day_start + timedelta(days=1)).timestamp())
 
         hits = self._vector.search(
             query, top_k=top_k, project=project, source=source, git_branch=git_branch,
