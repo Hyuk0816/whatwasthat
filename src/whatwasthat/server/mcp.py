@@ -40,7 +40,14 @@ _engine: SearchEngine | None = None
 
 
 def _get_engine() -> SearchEngine:
-    """SearchEngine 싱글톤 — 읽기 전용, 락 불필요."""
+    """SearchEngine 싱글톤 — 진짜 읽기 전용 (v1.0.11.2부터).
+
+    v1.0.11.1까지 search 경로는 Spaced Repetition으로 access_count 쓰기를
+    부수효과로 수행했고, 멀티 프로세스 환경에서 ChromaDB 커넥션 라우팅
+    이슈로 SQLITE_READONLY를 유발했다. v1.0.11.2에서 이 쓰기를 search에서
+    완전히 제거. access_count 증가는 v1.0.12의 recall_chunk(expansion 경로)
+    에서만 발생할 예정.
+    """
     global _engine  # noqa: PLW0603
     if _engine is None:
         data_dir = _config_module.WWT_DATA_DIR

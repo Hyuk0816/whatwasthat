@@ -211,7 +211,6 @@ class SearchEngine:
 
         # 3축 가중합 스코어링 적용 (relevance × (w_rel + w_rec×recency + w_imp×importance))
         session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
-        hit_chunk_ids: list[str] = []  # Spaced Repetition: 회수 +1 증가용
         for chunk_id, relevance, _ in hits:
             # 방어적 skip: vector.search가 phantom ID를 흘려보냈다면 건너뜀
             # (belt-and-suspenders — vector.py의 defensive filter 다음 2차 방어선)
@@ -255,7 +254,6 @@ class SearchEngine:
                 access_count=access_count,
             )
             session_chunks[chunk.session_id].append((chunk, final_score, chunk_index))
-            hit_chunk_ids.append(chunk_id)
 
         results: list[SearchResult] = []
         for session_id, scored in session_chunks.items():
@@ -284,10 +282,6 @@ class SearchEngine:
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
-
-        # Spaced Repetition: 검색된 청크들의 access_count 증가
-        if hit_chunk_ids:
-            self._vector.increment_access_counts(hit_chunk_ids)
 
         return results
 
