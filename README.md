@@ -35,13 +35,22 @@ That's it. Existing logs are auto-ingested. Future sessions auto-capture on sess
 
 ## How it works
 
-When a session ends, the agent's hook fires. WWT parses the log, extracts code, chunks the conversation, embeds it locally (no API), and stores it in ChromaDB.
+When a session ends, the agent's hook fires. WWT parses the log, extracts code, chunks the conversation, embeds the search text locally (no API), stores the search index in ChromaDB, and preserves full raw spans in SQLite.
 
-When you ask *"how did I do X last time?"* — any agent calls `search_memory` over MCP and gets the original conversation back. Including the *why*, not just the *what*.
+When you ask *"how did I do X last time?"* — any agent calls `search_memory` over MCP, gets a compact preview, and can expand the exact chunk with `recall_chunk`. Including the *why*, not just the *what*.
 
 ```
-session ends → hook → parse → chunk → embed → ChromaDB
-question     → MCP  → search → score → top sessions → agent answers
+session ends → hook → parse → chunk → embed → ChromaDB + raw SQLite
+question     → MCP  → search → score → preview → optional full recall
+```
+
+## Upgrading to v1.0.12
+
+v1.0.12 changes the storage shape to preserve full raw conversations and code snippets. Reingest once after upgrading:
+
+```bash
+wwt reset --force
+wwt setup
 ```
 
 ## Why one brain matters
@@ -60,6 +69,7 @@ question     → MCP  → search → score → top sessions → agent answers
 | `search_memory` | "How did I configure Redis last time?" |
 | `search_decision` | "Why Redis instead of Memcached?" |
 | `search_all` | Cross-project, cross-agent recall |
+| `recall_chunk` | Expand a search result's `chunk_id` into full raw text and code snippets |
 
 `search_memory` **auto-routes** — if your project filter returns nothing useful, it expands to all projects automatically (Self-ROUTE, EMNLP 2024). One call, no retries.
 

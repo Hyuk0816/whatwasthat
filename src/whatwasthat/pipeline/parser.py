@@ -44,8 +44,9 @@ _SHORT_OP_RE = re.compile(
     r"하겠습니다\.?\s*$|완료되었습니다|실패합니다|변경 완료"
 )
 
-# assistant 응답 최대 길이 (코드 제거 후)
-_MAX_CONTENT_LEN = 500
+# search_text 최대 길이 (코드 제거 후)
+_MAX_SEARCH_TEXT_LEN = 1000
+_MAX_CONTENT_LEN = _MAX_SEARCH_TEXT_LEN  # pre-v1.0.12 compatibility
 
 
 def _extract_text(content: str | list[dict]) -> str:
@@ -59,8 +60,14 @@ def _extract_text(content: str | list[dict]) -> str:
     return "\n".join(text_parts)
 
 
-def _clean_content(text: str, role: str) -> str:
-    """노이즈 제거: 코드 블록, 태그, 긴 응답 축약."""
+def _make_raw_text(text: str) -> str:
+    """원문 보존용 텍스트: 시스템 태그만 제거하고 코드 블록은 유지."""
+    cleaned = _SYSTEM_BLOCK_RE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def _make_search_text(text: str, role: str) -> str:
+    """검색 인덱싱용 텍스트: 코드 블록 제거 + 1000자 cap."""
     # 코드 블록 제거
     cleaned = _CODE_BLOCK_RE.sub("", text)
     # 시스템 블록 전체 제거 (태그 + 내용)
@@ -69,10 +76,15 @@ def _clean_content(text: str, role: str) -> str:
     cleaned = _TAG_RE.sub("", cleaned)
     # 연속 공백/줄바꿈 정리
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-    # assistant 응답은 길이 제한
-    if role == "assistant" and len(cleaned) > _MAX_CONTENT_LEN:
-        cleaned = cleaned[:_MAX_CONTENT_LEN] + "..."
+    # assistant 응답은 search_text만 길이 제한
+    if role == "assistant" and len(cleaned) > _MAX_SEARCH_TEXT_LEN:
+        cleaned = cleaned[:_MAX_SEARCH_TEXT_LEN]
     return cleaned
+
+
+def _clean_content(text: str, role: str) -> str:
+    """Deprecated compatibility wrapper for pre-v1.0.12 tests/callers."""
+    return _make_search_text(text, role)
 
 
 def _extract_code_blocks(text: str) -> list[dict[str, str]]:
@@ -119,9 +131,19 @@ def parse_jsonl(file_path: Path) -> list[Turn]:
             if not text:
                 continue
             code_blocks = _extract_code_blocks(text)
-            cleaned = _clean_content(text, role)
-            if _is_meaningful(cleaned, role=role):
-                turns.append(Turn(role=role, content=cleaned, code_snippets=code_blocks))
+            raw_text = _make_raw_text(text)
+            search_text = _make_search_text(text, role)
+            if not search_text and code_blocks:
+                search_text = raw_text[:_MAX_SEARCH_TEXT_LEN]
+            if _is_meaningful(search_text, role=role) or code_blocks:
+                turns.append(
+                    Turn(
+                        role=role,
+                        raw_text=raw_text,
+                        search_text=search_text,
+                        code_snippets=code_blocks,
+                    )
+                )
     return turns
 
 
@@ -311,8 +333,11 @@ class GeminiCliParser:
                 continue
 
             code_blocks = _extract_code_blocks(text)
-            cleaned = _clean_content(text, role)
-            if _is_meaningful(cleaned, role=role):
+            raw_text = _make_raw_text(text)
+            search_text = _make_search_text(text, role)
+            if not search_text and code_blocks:
+                search_text = raw_text[:_MAX_SEARCH_TEXT_LEN]
+            if _is_meaningful(search_text, role=role) or code_blocks:
                 ts_str = entry.get("timestamp")
                 timestamp: datetime | None = None
                 if ts_str:
@@ -321,8 +346,14 @@ class GeminiCliParser:
                     except ValueError:
                         timestamp = None
                 turns.append(
-                    Turn(role=role, content=cleaned, timestamp=timestamp,
-                         source=self.source, code_snippets=code_blocks)
+                    Turn(
+                        role=role,
+                        raw_text=raw_text,
+                        search_text=search_text,
+                        timestamp=timestamp,
+                        source=self.source,
+                        code_snippets=code_blocks,
+                    )
                 )
 
         return turns
@@ -354,11 +385,19 @@ class GeminiCliParser:
 
                     text = "\n".join(text_parts)
                     code_blocks = _extract_code_blocks(text)
-                    cleaned = _clean_content(text, role)
-                    if _is_meaningful(cleaned, role=role):
+                    raw_text = _make_raw_text(text)
+                    search_text = _make_search_text(text, role)
+                    if not search_text and code_blocks:
+                        search_text = raw_text[:_MAX_SEARCH_TEXT_LEN]
+                    if _is_meaningful(search_text, role=role) or code_blocks:
                         turns.append(
-                            Turn(role=role, content=cleaned, source=self.source,
-                                 code_snippets=code_blocks)
+                            Turn(
+                                role=role,
+                                raw_text=raw_text,
+                                search_text=search_text,
+                                source=self.source,
+                                code_snippets=code_blocks,
+                            )
                         )
         except (json.JSONDecodeError, OSError):
             pass
@@ -505,8 +544,11 @@ class CodexCliParser:
                 if not isinstance(text, str) or not text:
                     continue
                 code_blocks = _extract_code_blocks(text)
-                cleaned = _clean_content(text, role)
-                if _is_meaningful(cleaned, role=role):
+                raw_text = _make_raw_text(text)
+                search_text = _make_search_text(text, role)
+                if not search_text and code_blocks:
+                    search_text = raw_text[:_MAX_SEARCH_TEXT_LEN]
+                if _is_meaningful(search_text, role=role) or code_blocks:
                     timestamp: datetime | None = None
                     ts_str = obj.get("timestamp")
                     if ts_str:
@@ -517,8 +559,14 @@ class CodexCliParser:
                         except ValueError:
                             timestamp = None
                     turns.append(
-                        Turn(role=role, content=cleaned, timestamp=timestamp,
-                             source=self.source, code_snippets=code_blocks)
+                        Turn(
+                            role=role,
+                            raw_text=raw_text,
+                            search_text=search_text,
+                            timestamp=timestamp,
+                            source=self.source,
+                            code_snippets=code_blocks,
+                        )
                     )
         return turns
 

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 WWT_HOME = Path.home() / ".wwt"
 WWT_DATA_DIR = WWT_HOME / "data"
 CHROMA_DB_PATH = WWT_DATA_DIR / "vector"
+RAW_SPANS_DB_PATH = WWT_DATA_DIR / "raw" / "spans.db"
 BM25_INDEX_DIR = WWT_DATA_DIR / "bm25"
 BM25_INDEX_PATH = BM25_INDEX_DIR / "index.pkl"
 BM25_VERSION_PATH = BM25_INDEX_DIR / "version.txt"
@@ -22,6 +23,7 @@ class WwtConfig(BaseModel):
     home_dir: Path = WWT_HOME
     data_dir: Path = WWT_DATA_DIR
     chroma_path: Path = CHROMA_DB_PATH
+    raw_spans_path: Path = RAW_SPANS_DB_PATH
     bm25_index_path: Path = BM25_INDEX_PATH
     bm25_version_path: Path = BM25_VERSION_PATH
     embedding_model: str = EMBEDDING_MODEL

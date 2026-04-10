@@ -12,6 +12,7 @@ OP-RAG 순서 보존: decision/memory 모드는 청크를 turn 순서(시간순)
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -239,18 +240,46 @@ class SearchEngine:
 
             # 세션 내 청크 위치 (OP-RAG 순서 보존용)
             chunk_index = int(meta.get("chunk_index", 0) or 0)
+            raw_preview = meta.get("raw_preview") or doc
+            raw_length = int(meta.get("raw_length", len(raw_preview)) or 0)
+            raw_snippet_ids = meta.get("snippet_ids", "[]")
+            try:
+                if isinstance(raw_snippet_ids, str):
+                    snippet_ids = list(json.loads(raw_snippet_ids or "[]"))
+                elif isinstance(raw_snippet_ids, list):
+                    snippet_ids = raw_snippet_ids
+                else:
+                    snippet_ids = []
+            except json.JSONDecodeError:
+                snippet_ids = []
+            raw_code_languages = meta.get("code_languages", "")
+            if isinstance(raw_code_languages, list):
+                code_languages = raw_code_languages
+            else:
+                code_languages = [
+                    lang for lang in str(raw_code_languages or "").split(",")
+                    if lang
+                ]
 
             chunk = Chunk(
                 id=chunk_id,
+                span_id=meta.get("span_id", ""),
                 session_id=meta.get("session_id", ""),
-                turns=[],
-                raw_text=doc,
+                granularity=meta.get("granularity", "small-window"),
+                start_turn_index=chunk_index,
+                end_turn_index=int(meta.get("end_turn_index", chunk_index) or chunk_index),
+                turn_count=int(meta.get("turn_count", 0) or 0),
+                search_text=doc,
+                raw_preview=raw_preview,
+                raw_length=raw_length,
                 timestamp=chunk_ts,
                 project=meta.get("project", ""),
                 project_path=meta.get("project_path", ""),
                 git_branch=meta.get("git_branch", ""),
                 source=meta.get("source", "claude-code"),
-                start_turn_index=chunk_index,
+                snippet_ids=snippet_ids,
+                code_count=int(meta.get("code_count", 0) or 0),
+                code_languages=code_languages,
                 access_count=access_count,
             )
             session_chunks[chunk.session_id].append((chunk, final_score, chunk_index))
@@ -269,7 +298,7 @@ class SearchEngine:
 
             chunks = [c for c, _, _ in scored]
             first_chunk = chunks[0]
-            summary = first_chunk.raw_text[:200]
+            summary = first_chunk.raw_preview[:200]
             results.append(SearchResult(
                 session_id=session_id,
                 chunks=chunks,

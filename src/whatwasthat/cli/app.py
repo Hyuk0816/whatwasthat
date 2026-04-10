@@ -11,6 +11,7 @@ import typer
 from whatwasthat.config import WwtConfig
 
 if TYPE_CHECKING:
+    from whatwasthat.storage.raw_store import RawSpanStore
     from whatwasthat.storage.vector import VectorStore
 
 app = typer.Typer(
@@ -23,6 +24,15 @@ def _get_config() -> WwtConfig:
     config = WwtConfig()
     config.data_dir.mkdir(parents=True, exist_ok=True)
     return config
+
+
+def _raw_spans_path(config) -> Path:
+    """Resolve raw span DB path, including lightweight test config stubs."""
+    if hasattr(config, "raw_spans_path"):
+        return config.raw_spans_path
+    if hasattr(config, "chroma_path"):
+        return Path(config.chroma_path).parent / "raw" / "spans.db"
+    return Path.home() / ".wwt" / "data" / "raw" / "spans.db"
 
 
 class _IngestStats(TypedDict):
@@ -44,6 +54,7 @@ def _bulk_ingest_directory(
     patterns: list[str],
     label: str,
     *,
+    raw_store: RawSpanStore | None = None,
     rebuild_at_end: bool = True,
 ) -> _IngestStats:
     """Shared bulk-ingest helper used by both `setup` and `ingest` commands.
@@ -56,6 +67,7 @@ def _bulk_ingest_directory(
 
     Args:
         vector: initialized VectorStore
+        raw_store: initialized RawSpanStore. If omitted, one is created from config.
         directory: directory to scan (may be missing — silently noop)
         patterns: list of glob patterns (e.g. ["**/*.jsonl"])
         label: human-readable platform name for progress messages
@@ -67,6 +79,11 @@ def _bulk_ingest_directory(
     # Late imports to avoid circular dependencies and keep cold-import cheap.
     from whatwasthat.pipeline.chunker import chunk_turns
     from whatwasthat.pipeline.parser import detect_parser
+    from whatwasthat.storage.raw_store import RawSpanStore
+
+    if raw_store is None:
+        raw_store = RawSpanStore(_raw_spans_path(_get_config()))
+        raw_store.initialize()
 
     start = time.monotonic()
     stats: _IngestStats = {
@@ -92,6 +109,7 @@ def _bulk_ingest_directory(
     total = len(files)
     typer.echo(f"\n[{label}] ingesting {total} sessions...")
 
+    all_spans: list = []
     all_chunks: list = []
     session_count = 0
     parse_start = time.monotonic()
@@ -104,9 +122,10 @@ def _bulk_ingest_directory(
         if not turns:
             continue
         meta = parser.parse_meta(f)
-        chunks = chunk_turns(turns, session_id=f.stem, meta=meta)
+        spans, chunks = chunk_turns(turns, session_id=f.stem, meta=meta)
         if not chunks:
             continue
+        all_spans.extend(spans)
         all_chunks.extend(chunks)
         session_count += 1
 
@@ -129,6 +148,7 @@ def _bulk_ingest_directory(
     # _BULK_EMBED_BATCH_SIZE 단위로 쪼개 upsert해 메모리 피크를 선형에서 상수로 낮춘다.
     embed_start = time.monotonic()
     total_chunks = len(all_chunks)
+    raw_store.upsert_spans(all_spans)
     typer.echo(
         f"  [{label}] embedding {total_chunks} chunks "
         f"(batch={_BULK_EMBED_BATCH_SIZE})...",
@@ -171,10 +191,13 @@ def _bulk_ingest_directory(
 def init() -> None:
     """WWT 초기 설정 (DB 디렉토리 생성)."""
     config = _get_config()
+    from whatwasthat.storage.raw_store import RawSpanStore
     from whatwasthat.storage.vector import VectorStore
 
     vector = VectorStore(config.chroma_path)
     vector.initialize()
+    raw_store = RawSpanStore(_raw_spans_path(config))
+    raw_store.initialize()
     typer.echo(f"WWT 초기화 완료: {config.home_dir}")
 
 
@@ -312,10 +335,13 @@ def setup() -> None:
 
     # 1. DB 초기화
     typer.echo("DB 초기화 중... (최초 실행 시 임베딩 모델 ~470MB 다운로드)")
+    from whatwasthat.storage.raw_store import RawSpanStore
     from whatwasthat.storage.vector import VectorStore
 
     vector = VectorStore(config.chroma_path)
     vector.initialize()
+    raw_store = RawSpanStore(_raw_spans_path(config))
+    raw_store.initialize()
     typer.echo("✓ DB 초기화 완료")
 
     # 2. Stop Hook 스크립트 설치
@@ -471,6 +497,7 @@ exit 0
         Path.home() / ".claude" / "projects",
         patterns=["**/*.jsonl"],
         label="Claude Code",
+        raw_store=raw_store,
         rebuild_at_end=False,
     )
     _bulk_ingest_directory(
@@ -478,6 +505,7 @@ exit 0
         Path.home() / ".gemini" / "tmp",
         patterns=["**/chats/*.json"],
         label="Gemini CLI",
+        raw_store=raw_store,
         rebuild_at_end=False,
     )
     _bulk_ingest_directory(
@@ -485,6 +513,7 @@ exit 0
         Path.home() / ".codex" / "sessions",
         patterns=["**/*.jsonl"],
         label="Codex CLI",
+        raw_store=raw_store,
         rebuild_at_end=True,  # last platform: rebuild BM25 once at the very end
     )
 
@@ -546,10 +575,13 @@ def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> N
 
     from whatwasthat.pipeline.chunker import chunk_turns
     from whatwasthat.pipeline.parser import detect_parser
+    from whatwasthat.storage.raw_store import RawSpanStore
     from whatwasthat.storage.vector import VectorStore
 
     vector = VectorStore(config.chroma_path)
     vector.initialize()
+    raw_store = RawSpanStore(_raw_spans_path(config))
+    raw_store.initialize()
 
     if file_path.is_dir():
         # Delegate to the shared bulk helper (parse + chunk + single upsert + BM25).
@@ -558,6 +590,7 @@ def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> N
             file_path,
             patterns=["**/*.jsonl", "**/*.json"],
             label=file_path.name or "ingest",
+            raw_store=raw_store,
             rebuild_at_end=True,
         )
         return
@@ -573,12 +606,16 @@ def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> N
         typer.echo("No turns parsed.")
         return
     meta = parser.parse_meta(file_path)
-    chunks = chunk_turns(turns, session_id=session_id, meta=meta)
+    spans, chunks = chunk_turns(turns, session_id=session_id, meta=meta)
     if not chunks:
         typer.echo("No chunks produced.")
         return
+    raw_store.upsert_spans(spans)
     embedded = vector.upsert_session_chunks(session_id, chunks, rebuild_bm25=True)
-    typer.echo(f"Done: 1 session, {len(chunks)} chunks ({embedded} freshly embedded)")
+    typer.echo(
+        f"Done: 1 session, {len(spans)} spans, "
+        f"{len(chunks)} chunks ({embedded} freshly embedded)",
+    )
 
 
 @app.command()
@@ -648,7 +685,7 @@ def search(
     branch: str = typer.Option(None, "--branch", "-b", help="Git 브랜치 필터"),
     mode: str = typer.Option(None, "--mode", "-m", help="검색 모드 (decision, code)"),
     date: str = typer.Option(
-        None, "--date", "-d", help="날짜 필터 (YYYY-MM-DD, UTC)",
+        None, "--date", "-d", help="날짜 필터 (YYYY-MM-DD, Asia/Seoul)",
     ),
 ) -> None:
     """과거 대화에서 관련 기억 검색."""
@@ -678,7 +715,11 @@ def search(
         header = f"  {i}. {result.project}{branch_tag}{source_tag} (점수: {result.score:.2f})"
         typer.echo(header)
         for chunk in result.chunks[:3]:
-            lines = chunk.raw_text.strip().split("\n")[:2]
+            typer.echo(
+                f"     [chunk:{chunk.id} | span:{chunk.span_id} | "
+                f"turns {chunk.start_turn_index}-{chunk.end_turn_index}]",
+            )
+            lines = chunk.raw_preview.strip().split("\n")[:2]
             for line in lines:
                 typer.echo(f"     {line[:100]}")
         typer.echo()
@@ -718,7 +759,11 @@ def why(
         header = f"  {i}. {result.project}{branch_tag}{source_tag} (점수: {result.score:.2f})"
         typer.echo(header)
         for chunk in result.chunks[:3]:
-            lines = chunk.raw_text.strip().split("\n")[:2]
+            typer.echo(
+                f"     [chunk:{chunk.id} | span:{chunk.span_id} | "
+                f"turns {chunk.start_turn_index}-{chunk.end_turn_index}]",
+            )
+            lines = chunk.raw_preview.strip().split("\n")[:2]
             for line in lines:
                 typer.echo(f"     {line[:100]}")
         typer.echo()
@@ -733,9 +778,10 @@ def reset(
 
     config = _get_config()
     vector_dir = config.chroma_path
+    raw_dir = _raw_spans_path(config).parent
     bm25_dir = config.bm25_index_path.parent
 
-    targets = [p for p in (vector_dir, bm25_dir) if p.exists()]
+    targets = [p for p in (vector_dir, raw_dir, bm25_dir) if p.exists()]
     if not targets:
         typer.echo("삭제할 데이터가 없습니다.")
         return
@@ -748,5 +794,5 @@ def reset(
 
     for target in targets:
         _shutil.rmtree(target)
-    typer.echo("✓ 모든 적재 데이터 삭제 완료 (vector + bm25)")
+    typer.echo("✓ 모든 적재 데이터 삭제 완료 (vector + raw + bm25)")
     typer.echo("  다시 적재하려면: wwt setup 또는 wwt ingest <경로>")

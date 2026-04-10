@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import pickle
@@ -20,6 +22,10 @@ _log = logging.getLogger("whatwasthat.vector")
 
 # 하이브리드 검색 가중치: vector * α + bm25 * (1-α)
 _VECTOR_WEIGHT = 0.6
+
+
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 _kiwi = None
@@ -182,7 +188,7 @@ class VectorStore:
             return
         collection = self._get_collection()
         ids = [c.id for c in chunks]
-        documents = [c.raw_text for c in chunks]
+        documents = [c.search_text for c in chunks]
         metadatas = [
             {
                 "session_id": c.session_id,
@@ -190,18 +196,24 @@ class VectorStore:
                 "project_path": c.project_path,
                 "git_branch": c.git_branch,
                 "chunk_index": c.start_turn_index,  # 세션 내 시작 턴 인덱스
-                "turn_count": len(c.turns),
+                "start_turn_index": c.start_turn_index,
+                "end_turn_index": c.end_turn_index,
+                "turn_count": c.turn_count,
+                "span_id": c.span_id,
+                "granularity": c.granularity,
+                "raw_preview": c.raw_preview,
+                "raw_length": c.raw_length,
+                "content_hash": _content_hash(c.search_text),
+                "snippet_ids": json.dumps(c.snippet_ids, ensure_ascii=False),
                 "source": c.source,
                 "timestamp": (
                     ensure_utc(c.timestamp).isoformat() if c.timestamp else ""
                 ),
                 # epoch int for native ChromaDB $gte/$lt where-clause range queries
                 "timestamp_epoch": to_epoch(c.timestamp),
-                "has_code": "true" if c.code_snippets else "false",
-                "code_languages": (
-                    ",".join(sorted({s["language"] for s in c.code_snippets}))
-                    if c.code_snippets else ""
-                ),
+                "has_code": "true" if c.code_count else "false",
+                "code_count": c.code_count,
+                "code_languages": ",".join(c.code_languages),
                 "access_count": c.access_count,  # Spaced Repetition 감쇠율 조절용
             }
             for c in chunks
@@ -236,8 +248,13 @@ class VectorStore:
             where={"session_id": session_id},
             include=["metadatas"],
         )
-        existing_meta: dict[str, int] = {
-            cid: (meta.get("turn_count", 0) if meta else 0)
+        existing_meta: dict[str, tuple[int, int, str, str]] = {
+            cid: (
+                int(meta.get("turn_count", 0) or 0),
+                int(meta.get("raw_length", 0) or 0),
+                str(meta.get("span_id", "") or ""),
+                str(meta.get("content_hash", "") or ""),
+            ) if meta else (0, 0, "", "")
             for cid, meta in zip(existing["ids"], existing["metadatas"] or [])
         }
 
@@ -250,8 +267,14 @@ class VectorStore:
         # 3. 변경된 청크만 필터 — ID 동일 + turn_count 동일이면 스킵
         changed: list[Chunk] = []
         for chunk in chunks:
-            old_turn_count = existing_meta.get(chunk.id)
-            if old_turn_count is not None and old_turn_count == len(chunk.turns):
+            old_shape = existing_meta.get(chunk.id)
+            new_shape = (
+                chunk.turn_count,
+                chunk.raw_length,
+                chunk.span_id,
+                _content_hash(chunk.search_text),
+            )
+            if old_shape is not None and old_shape == new_shape:
                 continue  # 내용 동일, 임베딩 스킵
             changed.append(chunk)
 
