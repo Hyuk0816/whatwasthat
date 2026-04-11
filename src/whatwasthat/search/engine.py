@@ -16,6 +16,7 @@ import json
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Literal
 
 from whatwasthat.models import Chunk, SearchResult
 from whatwasthat.storage.vector import VectorStore
@@ -42,6 +43,14 @@ _ARCH_PATTERNS = re.compile(
     r"architect|design|pattern|refactor|설계|구조|아키텍처|리팩토링",
     re.IGNORECASE,
 )
+_CODE_QUERY_PATTERNS = re.compile(
+    r"코드|함수|클래스|code|function|class",
+    re.IGNORECASE,
+)
+_OVERVIEW_PATTERNS = re.compile(
+    r"뭐 했|어떤 작업|요약|개요|summary|overview|what did",
+    re.IGNORECASE,
+)
 
 # 모드별 3축 가중치 프리셋
 _SCORING_WEIGHTS: dict[str, dict[str, float]] = {
@@ -50,6 +59,7 @@ _SCORING_WEIGHTS: dict[str, dict[str, float]] = {
     "code": {"w_rel": 0.55, "w_rec": 0.35, "w_imp": 0.10, "decay_rate": 0.005},
 }
 _DEFAULT_WEIGHTS = _SCORING_WEIGHTS["memory"]
+QueryClass = Literal["decision", "code", "overview", "general"]
 
 
 def _time_decay(hours_passed: float, decay_rate: float) -> float:
@@ -150,6 +160,125 @@ def _apply_scoring(
     return min(max(final, 0.0), 1.0)
 
 
+def _classify_query(query: str) -> QueryClass:
+    """Query를 reranking용 intent class로 분류."""
+    if _DECISION_PATTERNS_KO.search(query) or _DECISION_PATTERNS_EN.search(query):
+        return "decision"
+    if _ERROR_PATTERNS.search(query) or _CODE_QUERY_PATTERNS.search(query):
+        return "code"
+    if _OVERVIEW_PATTERNS.search(query):
+        return "overview"
+    return "general"
+
+
+def _query_tokens(query: str) -> set[str]:
+    """공백 기준 query 토큰 집합 생성."""
+    return {
+        token.strip(".,?!:;()[]{}\"'")
+        for token in query.lower().split()
+        if token.strip(".,?!:;()[]{}\"'")
+    }
+
+
+def _compute_rerank_boost(
+    query: str,
+    query_class: QueryClass,
+    chunk: Chunk,
+    query_tokens: set[str],
+) -> float:
+    """Query-chunk 상호작용 기반 rerank boost 계산."""
+    if not query.strip():
+        return 0.0
+
+    boost = 0.0
+
+    # (a) Query-mode alignment
+    if query_class == "decision":
+        if _DECISION_PATTERNS_KO.search(chunk.search_text) or _DECISION_PATTERNS_EN.search(
+            chunk.search_text,
+        ):
+            boost += 0.08
+    elif query_class == "code" and chunk.code_count > 0:
+        boost += 0.08
+
+    # (b) Exact term overlap
+    if query_tokens:
+        chunk_text = chunk.search_text.lower()
+        matched_tokens = sum(1 for token in query_tokens if token in chunk_text)
+        overlap_ratio = matched_tokens / len(query_tokens)
+        boost += overlap_ratio * 0.08
+
+    # (c) Granularity preference
+    if query_class == "decision" and chunk.granularity == "small-window":
+        boost += 0.05
+    elif query_class == "code" and chunk.granularity == "turn-pair":
+        boost += 0.05
+    elif query_class == "overview" and chunk.granularity == "session-outline":
+        boost += 0.05
+
+    return min(boost, 0.25)
+
+
+def _turn_overlap_ratio(left: Chunk, right: Chunk) -> float:
+    """두 청크의 turn range overlap 비율 계산."""
+    min_turn_count = min(left.turn_count, right.turn_count)
+    if min_turn_count <= 0:
+        return 0.0
+
+    overlap_turns = min(left.end_turn_index, right.end_turn_index) - max(
+        left.start_turn_index,
+        right.start_turn_index,
+    ) + 1
+    if overlap_turns <= 0:
+        return 0.0
+    return overlap_turns / min_turn_count
+
+
+def _rerank(
+    scored_items: list[tuple[Chunk, float, int]],
+    query: str,
+) -> list[tuple[Chunk, float, int]]:
+    """Feature matching 기반 lightweight reranking."""
+    query_class = _classify_query(query)
+    query_tokens = _query_tokens(query)
+
+    reranked = [
+        (
+            chunk,
+            min(score + _compute_rerank_boost(query, query_class, chunk, query_tokens), 1.0),
+            chunk_index,
+        )
+        for chunk, score, chunk_index in scored_items
+    ]
+
+    adjusted = list(reranked)
+    for left_index in range(len(adjusted)):
+        left_chunk, left_score, left_chunk_index = adjusted[left_index]
+        for right_index in range(left_index + 1, len(adjusted)):
+            right_chunk, right_score, right_chunk_index = adjusted[right_index]
+            if left_chunk.session_id != right_chunk.session_id:
+                continue
+            if _turn_overlap_ratio(left_chunk, right_chunk) < 0.5:
+                continue
+
+            if left_score <= right_score:
+                adjusted[left_index] = (
+                    left_chunk,
+                    max(left_score - 0.10, 0.0),
+                    left_chunk_index,
+                )
+                left_score = adjusted[left_index][1]
+            else:
+                adjusted[right_index] = (
+                    right_chunk,
+                    max(right_score - 0.10, 0.0),
+                    right_chunk_index,
+                )
+
+    adjusted.sort(key=lambda item: item[1], reverse=True)
+    return adjusted
+
+
 class SearchEngine:
     """벡터 시맨틱 검색 + 세션 그루핑."""
 
@@ -170,6 +299,8 @@ class SearchEngine:
         mode: str | None = None,
         date: str | None = None,
     ) -> list[SearchResult]:
+        candidate_top_k = max(top_k * 2, top_k)
+
         # Convenience: "YYYY-MM-DD" → UTC 하루 범위 epoch로 변환
         since_epoch: int | None = None
         until_epoch: int | None = None
@@ -182,7 +313,7 @@ class SearchEngine:
                 ) from e
 
         hits = self._vector.search(
-            query, top_k=top_k, project=project, source=source, git_branch=git_branch,
+            query, top_k=candidate_top_k, project=project, source=source, git_branch=git_branch,
             since_epoch=since_epoch, until_epoch=until_epoch,
         )
         if not hits:
@@ -211,7 +342,7 @@ class SearchEngine:
         now = datetime.now(timezone.utc)
 
         # 3축 가중합 스코어링 적용 (relevance × (w_rel + w_rec×recency + w_imp×importance))
-        session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
+        scored_items: list[tuple[Chunk, float, int]] = []
         for chunk_id, relevance, _ in hits:
             # 방어적 skip: vector.search가 phantom ID를 흘려보냈다면 건너뜀
             # (belt-and-suspenders — vector.py의 defensive filter 다음 2차 방어선)
@@ -282,7 +413,16 @@ class SearchEngine:
                 code_languages=code_languages,
                 access_count=access_count,
             )
-            session_chunks[chunk.session_id].append((chunk, final_score, chunk_index))
+            scored_items.append((chunk, final_score, chunk_index))
+
+        if not scored_items:
+            return []
+
+        reranked_items = _rerank(scored_items, query)
+
+        session_chunks: defaultdict[str, list[tuple[Chunk, float, int]]] = defaultdict(list)
+        for chunk, score, chunk_index in reranked_items:
+            session_chunks[chunk.session_id].append((chunk, score, chunk_index))
 
         results: list[SearchResult] = []
         for session_id, scored in session_chunks.items():
@@ -312,7 +452,7 @@ class SearchEngine:
 
         results.sort(key=lambda r: r.score, reverse=True)
 
-        return results
+        return results[:top_k]
 
     def search_with_routing(
         self,
