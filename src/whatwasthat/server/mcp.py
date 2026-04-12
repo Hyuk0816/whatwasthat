@@ -13,6 +13,7 @@ from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.raw_store import RawSpanStore
 from whatwasthat.storage.vector import VectorStore
 from whatwasthat.timeutil import format_kst
+from whatwasthat.usage_guide import USAGE_GUIDE_INLINE
 
 
 def _format_timestamp(result: SearchResult) -> str:
@@ -24,17 +25,7 @@ def _format_timestamp(result: SearchResult) -> str:
 
 mcp = FastMCP(
     "whatwasthat",
-    instructions=(
-        "세션 시작 시, 현재 프로젝트의 최근 기술 결정사항을 검색하여 컨텍스트를 파악하세요. "
-        "search_memory(query='recent technical decisions and architecture choices')를 호출하세요. "
-        "사용자가 과거 대화, 이전 작업, 의사결정 이유를 물을 때도 이 도구를 사용하세요. "
-        "예: '그때 그거 뭐였지?', '이전에 어떻게 했지?', '왜 Redis를 선택했지?' 등. "
-        "search_memory는 현재 프로젝트 맥락으로, search_all은 모든 프로젝트에서, "
-        "search_decision은 의사결정 맥락(왜 A 대신 B를 선택했는지)을 검색합니다. "
-        "특정 날짜 세션만 조회하려면 모든 search 도구에 "
-        "date='YYYY-MM-DD' (Asia/Seoul 기준) 파라미터를 전달하세요. "
-        "검색 결과 preview가 부족하면 recall_chunk(chunk_id='...')로 원문을 조회하세요."
-    ),
+    instructions=USAGE_GUIDE_INLINE,
 )
 
 
@@ -127,19 +118,37 @@ def search_memory(
     git_branch: str | None = None,
     date: str | None = None,
 ) -> str:
-    """프로젝트, 플랫폼, 브랜치 등 특정 조건으로 과거 대화를 검색합니다.
+    """과거 대화를 프로젝트/플랫폼/브랜치 기준으로 검색합니다 (기본 회수 도구).
 
-    사용자가 특정 프로젝트, 플랫폼(Claude/Gemini/Codex),
-    또는 브랜치를 언급하면 이 도구를 사용하세요.
+    아래 회수성 트리거가 오면 git log/Bash/Read 전에 이 도구를 먼저 호출하세요.
+
+    트리거 예시:
+    - 세션 시작 직후 맥락 파악 — "어제 이 프로젝트 어디까지 했지?",
+      "지금 상황 파악해줘", "이어서 작업하자", "맥락 파악해"
+      → query='recent technical decisions and architecture choices'
+    - 모호한 과거 회수 — "그때 그거 뭐였지?", "이전에 어떻게 했지?",
+      "지난번에 뭐라고 했지?"
+    - 크로스 에이전트 — "codex/claude/gemini에서 작업한거 파악해",
+      "어제 Codex로 한 작업 보여줘" → source 파라미터 지정
+    - 크로스 브랜치 — "feature/auth 브랜치에서 했던 작업" → git_branch 지정
+    - 특정 날짜 — "어제 뭐 했지?", "2026-04-11에 작업한 것" → date='YYYY-MM-DD'
+
+    결과 preview로 답이 부족하면 반환된 chunk_id로 recall_chunk를 호출하여
+    원문을 확장하세요 (2-hop 패턴: search → recall).
 
     Args:
-        query: 검색할 내용 (예: "DB 뭘로 했지?", "Redis 캐시 설정")
-        project: 특정 프로젝트명으로 필터링 (예: "whatwasthat", "frontend")
-        cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
-        source: 플랫폼 필터 — "claude-code" (클로드),
-            "gemini-cli" (제미나이), "codex-cli" (코덱스)
-        git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth")
-        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준). 해당 날짜 세션만 반환.
+        query: 검색할 내용 (예: "DB 뭘로 했지?", "Redis 캐시 설정").
+            사용자의 자연어 질문에서 핵심 키워드를 그대로 전달해도 충분합니다.
+        project: 특정 프로젝트명으로 필터링 (예: "whatwasthat", "frontend").
+            미지정 시 cwd에서 basename을 자동 추출합니다.
+        cwd: 현재 작업 디렉토리 — project 미지정 시 프로젝트명 자동 감지용.
+            agent가 자기 작업 디렉토리를 전달하세요.
+        source: 플랫폼 필터 — "claude-code" (Claude Code),
+            "gemini-cli" (Gemini CLI), "codex-cli" (Codex CLI).
+            크로스 에이전트 회수 시 반드시 지정하세요.
+        git_branch: 특정 Git 브랜치로 필터링 (예: "main", "feature/auth").
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준).
+            해당 날짜에 시작된 세션만 반환합니다.
     """
     engine = _get_engine()
 
@@ -175,12 +184,23 @@ def search_memory(
 
 @mcp.tool()
 def search_all(query: str, date: str | None = None) -> str:
-    """특정 프로젝트, 플랫폼, 브랜치를 언급하지 않고 과거 대화를 검색할 때 사용합니다.
-    모든 프로젝트, 모든 플랫폼에서 통합 검색합니다.
+    """모든 프로젝트/모든 플랫폼에 걸쳐 통합 검색합니다 (크로스 프로젝트 회수용).
+
+    사용자가 프로젝트/플랫폼/브랜치를 특정하지 않고, 다른 레포에서 풀었던
+    비슷한 문제를 떠올리려 할 때 이 도구를 사용하세요.
+
+    트리거 예시:
+    - "다른 프로젝트에서 비슷한 문제 어떻게 풀었지?"
+    - "이 mTLS cert chain 이슈 예전에 본 적 있는데"
+    - "이 패턴 어느 레포에서 썼더라"
+
+    현재 프로젝트 안에서만 찾고 싶으면 search_memory를 쓰세요.
+    의사결정 이유가 필요하면 search_decision을 쓰세요.
 
     Args:
-        query: 검색할 내용 (예: "전에 했던 Redis 설정", "비슷한 버그 해결")
-        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준). 해당 날짜 세션만 반환.
+        query: 검색할 내용 (예: "전에 했던 Redis 설정", "비슷한 버그 해결").
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준).
+            해당 날짜에 시작된 세션만 반환합니다.
     """
     engine = _get_engine()
     results = engine.search(query, project=None, date=date)
@@ -212,15 +232,27 @@ def search_decision(
     git_branch: str | None = None,
     date: str | None = None,
 ) -> str:
-    """의사결정 맥락을 검색합니다. '왜 A 대신 B를 선택했지?' 같은 질문에 사용하세요.
+    """의사결정 맥락을 검색합니다 — '왜 A 대신 B를 선택했지?' 류 질문 전용.
+
+    내부적으로 "대신/선택/결정/이유/비교/때문에 / instead of / because / chose"
+    패턴이 포함된 청크에 점수 가중치를 부여하여 일반 search_memory보다
+    "왜"를 담은 chunk를 우선 노출합니다.
+
+    트리거 예시:
+    - "왜 Redis를 골랐지?", "왜 Kafka 대신 NATS로 갔지?"
+    - "이유가 뭐였지?", "그 트레이드오프 기록 남아있나?"
+    - "장단점 비교한 대화 찾아줘"
+
+    '그때 그거 뭐였지?' 같은 일반 회수는 search_memory를 쓰세요.
+    이 도구는 의사결정 컨텍스트가 명확할 때만 효과적입니다.
 
     Args:
-        query: 의사결정 검색 쿼리 (예: "왜 Redis를 선택했지?", "DB를 바꾼 이유")
-        project: 특정 프로젝트명으로 필터링
-        cwd: 현재 작업 디렉토리 (자동 감지용, project 미지정 시 프로젝트명 추출에 사용)
-        source: 플랫폼 필터 — "claude-code", "gemini-cli", "codex-cli"
-        git_branch: 특정 Git 브랜치로 필터링
-        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준). 해당 날짜 세션만 반환.
+        query: 의사결정 검색 쿼리 (예: "왜 Redis를 선택했지?", "DB를 바꾼 이유").
+        project: 특정 프로젝트명으로 필터링. 미지정 시 cwd에서 자동 추출.
+        cwd: 현재 작업 디렉토리 — project 미지정 시 프로젝트명 자동 감지용.
+        source: 플랫폼 필터 — "claude-code", "gemini-cli", "codex-cli".
+        git_branch: 특정 Git 브랜치로 필터링.
+        date: 날짜 필터 "YYYY-MM-DD" 포맷 (Asia/Seoul 기준).
     """
     engine = _get_engine()
 
@@ -253,11 +285,24 @@ def search_decision(
 
 @mcp.tool()
 def recall_chunk(chunk_id: str, include_neighbors: int = 0) -> str:
-    """검색 결과의 chunk_id로 full 원문과 full code snippets를 조회합니다.
+    """chunk_id로 full 원문과 full code snippets를 조회합니다 (search의 2-hop 확장).
+
+    search_memory / search_all / search_decision 결과 preview는 청크당
+    수 줄만 보여주므로, 정확한 인용·코드·타임스탬프가 필요하면 이 도구로
+    원문을 확장하세요. preview에서 끊기는 문장이 결정적 내용을 담고 있을 때,
+    또는 해당 세션의 바로 앞뒤 맥락이 필요할 때가 전형적인 사용 시점입니다.
+
+    전형적 흐름:
+        1) search_memory(query=...) 호출
+        2) 결과 중 관련성 높은 chunk_id 선택
+        3) recall_chunk(chunk_id=...) 또는
+           recall_chunk(chunk_id=..., include_neighbors=1)
 
     Args:
-        chunk_id: search 결과에 표시된 chunk ID
+        chunk_id: search 결과에 표시된 chunk ID (sha256 앞 16자).
         include_neighbors: 같은 세션에서 앞뒤 span을 몇 개까지 함께 반환할지
+            (기본 0 = 해당 span만). 회의 흐름·디버깅 전후 맥락이 필요하면
+            1~2로 올려 잡으세요.
     """
     engine = _get_engine()
     raw_store = _get_raw_store()

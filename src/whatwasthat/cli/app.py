@@ -319,7 +319,17 @@ def _register_gemini_hook(settings_path: Path) -> bool:
 
 
 @app.command()
-def setup() -> None:
+def setup(
+    with_memory: bool = typer.Option(
+        False,
+        "--with-memory",
+        help=(
+            "각 에이전트의 전역 메모리 파일(CLAUDE.md / GEMINI.md / AGENTS.md)에 "
+            "WWT 사용 규칙 블록을 주입합니다. 블록 마커로 격리되어 있어 재실행 시 "
+            "갱신되고, 마커 구간만 지우면 안전하게 제거할 수 있습니다."
+        ),
+    ),
+) -> None:
     """WWT 전체 설정 — DB 초기화 + Stop Hook + MCP 서버 등록."""
     import json
     import shutil
@@ -563,6 +573,25 @@ exit 0
             typer.echo("✓ Codex CLI Stop Hook 등록 완료")
         else:
             typer.echo("✓ Codex CLI Hook 이미 등록됨")
+
+    # 8. (opt-in) 각 에이전트 전역 메모리에 WWT 사용 규칙 주입
+    if with_memory:
+        from whatwasthat.usage_guide import upsert_memory_block
+
+        memory_targets = [
+            ("Claude Code", Path.home() / ".claude" / "CLAUDE.md"),
+            ("Gemini CLI", Path.home() / ".gemini" / "GEMINI.md"),
+            ("Codex CLI", Path.home() / ".codex" / "AGENTS.md"),
+        ]
+        for label, target_path in memory_targets:
+            status = upsert_memory_block(target_path)
+            status_msg = {
+                "created": "생성",
+                "updated": "갱신",
+                "appended": "블록 추가",
+                "unchanged": "이미 최신",
+            }.get(status, status)
+            typer.echo(f"✓ {label} 메모리 {status_msg}: {target_path}")
 
     typer.echo("\n설정 완료! 각 플랫폼을 재시작하여 확인하세요.")
 
