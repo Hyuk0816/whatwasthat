@@ -25,9 +25,10 @@ WWT (What Was That?) is a semantic search engine for AI conversation logs. It au
          │  ├─ GeminiCliParser (JSON + JSONL)          │
          │  └─ CodexCliParser (JSONL + RolloutItem)    │
          │                                              │
-         │  Chunker (Sliding window, 2-6 turns)        │
-         │  ├─ Overlap: 2 turns                        │
-         │  └─ Min length: 200 chars + 1 user turn     │
+         │  Chunker (Multi-granularity, 3 scales)      │
+         │  ├─ turn-pair   (2 turns)                   │
+         │  ├─ small-window (2-6 turns, overlap 2)     │
+         │  └─ session-outline (whole session, ≥4 turns)│
          └─────────────────────────┬────────────────────┘
                                    │
          ┌─────────────────────────▼────────────────────┐
@@ -49,27 +50,37 @@ WWT (What Was That?) is a semantic search engine for AI conversation logs. It au
          │  ├─ Tokenizer: kiwipiepy (Korean morpheme)  │
          │  └─ Session grouping                        │
          │                                              │
+         │  Lightweight Reranker (v1.1)                │
+         │  ├─ Query class: decision|code|overview|gen │
+         │  ├─ Boost: mode align + term overlap + gran │
+         │  └─ Overlap dedup penalty (-0.10)           │
+         │                                              │
          │  Search Modes                                │
-         │  ├─ default: Hybrid vector + BM25           │
+         │  ├─ default: Hybrid vector + BM25 + rerank  │
          │  ├─ decision: Pattern boost (1.3x)          │
          │  └─ code: Code snippet filter               │
          └─────────────────────────┬────────────────────┘
                                    │
          ┌─────────────────────────▼────────────────────┐
-         │       Storage Layer                          │
+         │       Storage Layer (dual store)             │
          ├──────────────────────────────────────────────┤
-         │  ChromaDB                                    │
+         │  ChromaDB — search index                     │
          │  ├─ Distance: cosine                        │
          │  ├─ Index: HNSW                             │
+         │  ├─ Payload: search_text + chunk metadata   │
          │  └─ Path: ~/.wwt/data/vector/               │
          │                                              │
-         │  Metadata per Chunk                          │
-         │  ├─ session_id                              │
-         │  ├─ project, git_branch                     │
-         │  ├─ source (platform)                       │
-         │  ├─ timestamp                               │
-         │  ├─ has_code, code_languages                │
-         │  └─ turn_count                              │
+         │  SQLite — RawSpan store (v1.0.12+)          │
+         │  ├─ Full raw_text per span                  │
+         │  ├─ Full code_snippets                      │
+         │  └─ Fetched by recall_chunk via span_id     │
+         │                                              │
+         │  Chunk metadata (Chroma)                     │
+         │  ├─ session_id, span_id, granularity        │
+         │  ├─ project, project_path, git_branch       │
+         │  ├─ source (platform), timestamp            │
+         │  ├─ turn_count, raw_length                  │
+         │  └─ code_count, code_languages, snippet_ids │
          └──────────────────────────────────────────────┘
 ```
 
@@ -142,55 +153,64 @@ Skips:
 From first lines: `sessionId`, `cwd` (project name), `gitBranch`, `timestamp`
 - If missing: fallback to file name, empty string, or current time
 
-### 3. Chunking Phase
+### 3. Chunking Phase (v1.1 multi-granularity)
 
 **Input**: `list[Turn]` + `SessionMeta`
 
-**Sliding Window Chunking**
+`chunk_turns()` produces chunks at **three granularities simultaneously** from the same turn list, so the right-sized context can win at search time.
+
+| Granularity | Window | Overlap | Chunk ID key | Span ID key | Notes |
+|---|---|---|---|---|---|
+| `turn-pair` | 2 turns | none (step 2) | `tp{start}` | `tp{start}e{end}` | Fact recall |
+| `small-window` | 2–6 turns (sliding) | 2 turns (step 4) | `c{start}` | `s{start}e{end}` | Decision context |
+| `session-outline` | whole session (≥4 turns) | — | `outline` | `outline` | Session overview; turns truncated to first 200 chars |
+
+**Example (10 turns)**
 
 ```
-Config:
-  min_turns: 2
-  max_turns: 6
-  overlap: 2 turns
-  step: max_turns - overlap = 4
-
-Example (10 turns):
 [T0 T1 T2 T3 T4 T5 T6 T7 T8 T9]
 
-Chunk 0: [T0 T1 T2 T3 T4 T5]  ← indices 0:6
-Chunk 1: [T4 T5 T6 T7 T8 T9]  ← indices 4:10 (overlap: T4, T5)
+turn-pair         : [T0 T1] [T2 T3] [T4 T5] [T6 T7] [T8 T9]
+small-window      : [T0..T5]           [T4..T9]
+session-outline   : [T0..T9] (each turn trimmed to 200 chars)
 ```
 
 **Chunk Validation**
 
-Chunk is kept if:
-1. Has ≥ 1 user turn
-2. Raw text ≥ 200 chars
-3. Turns ≥ min_turns
+A chunk is kept if:
+1. It contains ≥ 1 user turn.
+2. Raw text ≥ 200 chars — **enforced for `turn-pair` and `small-window`**; `session-outline` skips this check so short sessions still get an overview.
+3. For `small-window`: turns ≥ `min_turns` (default 2).
+4. `session-outline` additionally requires the session to have ≥ 4 turns (`_MIN_OUTLINE_TURNS`).
 
-**Chunk ID Generation**
+**Chunk ID Generation** (deterministic, idempotent upsert)
 
 ```python
-chunk_id = sha256(f"{session_id}:c{start_index}").hexdigest()[:16]
+chunk_id = sha256(f"{session_id}:{key}").hexdigest()[:16]
+# key ∈ {"tp{start}", "c{start}", "outline"}
 ```
 
-Deterministic: Same session + start index = same chunk ID (idempotent upsert).
+The prefix scheme (`tp` / `c` / `outline`) guarantees no collisions across granularities within the same session.
 
 **Chunk Metadata**
 
 ```python
 {
-  "session_id": str,
-  "project": str,            # From cwd basename
-  "project_path": str,       # Full cwd
-  "git_branch": str,
-  "source": str,             # "claude-code" | "gemini-cli" | "codex-cli"
-  "timestamp": str,          # ISO format
-  "has_code": "true" | "false",
-  "code_languages": str,     # Comma-separated
-  "chunk_index": int,        # Position in chunks
-  "turn_count": int,         # Number of turns in chunk
+  "session_id":     str,
+  "granularity":    str,            # "turn-pair" | "small-window" | "session-outline"
+  "span_id":        str,            # Points into RawSpan SQLite
+  "start_turn_index": int,
+  "end_turn_index":   int,
+  "turn_count":     int,
+  "raw_length":     int,            # Full raw text length
+  "project":        str,            # From cwd basename
+  "project_path":   str,            # Full cwd
+  "git_branch":     str,
+  "source":         str,            # "claude-code" | "gemini-cli" | "codex-cli"
+  "timestamp":      str,            # ISO format
+  "code_count":     int,            # # of snippets in span
+  "code_languages": list[str],      # Sorted unique languages
+  "snippet_ids":    list[str],      # Code snippet IDs in RawSpan
 }
 ```
 
@@ -316,8 +336,43 @@ For each chunk in (vector ∪ BM25 results):
   bm25_score = bm25_results.get(chunk_id, 0.0)
   hybrid = vec_score * 0.6 + bm25_score * 0.4
 
-Sort by hybrid, return top top_k
+Sort by hybrid, keep top (top_k * 2) → pass to reranker
 ```
+
+**Step 4: Lightweight Reranking (v1.1)**
+
+After hybrid scoring, candidates are reranked with cheap feature matching — no extra model call. `search()` over-fetches (`top_k * 2`), reranks, then trims to `top_k`.
+
+```
+1. Classify query:
+     _classify_query(query) → "decision" | "code" | "overview" | "general"
+       - decision : Korean/English decision patterns (대신, 선택, 이유 / instead of, because, ...)
+       - code     : Error or code-shaped tokens (stack trace, traceback, TypeError, ...)
+       - overview : "overall", "전반", "summary", ...
+       - general  : fallback
+
+2. For each candidate, compute boost (capped at +0.25):
+     (a) Query-mode alignment (+0.08)
+           decision query → chunk.search_text matches decision pattern
+           code query     → chunk.code_count > 0
+     (b) Exact term overlap (up to +0.08)
+           boost += (matched_tokens / |query_tokens|) * 0.08
+     (c) Granularity preference (+0.05)
+           decision → small-window
+           code     → turn-pair
+           overview → session-outline
+
+     score' = min(score + boost, 1.0)
+
+3. Overlap dedup penalty:
+     For every pair (A, B) in the same session where
+       turn_range_overlap(A, B) / min(turn_count) ≥ 0.5
+     subtract 0.10 from the lower-scoring one (clamped ≥ 0).
+
+4. Sort by reranked score, return top top_k.
+```
+
+This keeps the decision-ish / code-ish / overview-ish chunks in front when the query looks that way, while preventing near-duplicate adjacent windows from hogging the top slots.
 
 ### Search Modes
 
@@ -406,15 +461,24 @@ for session_id, chunk_scores in session_chunks.items():
 - `source`: Platform identifier
 - `code_snippets`: `list[{language: str, code: str}]`
 
-**Chunk**: Topical unit for indexing
+**Chunk**: Searchable unit for indexing (v1.1)
 - `id`: Deterministic chunk ID (sha256[:16])
+- `span_id`: Pointer to the `RawSpan` row in SQLite
 - `session_id`: Parent session
-- `turns`: Sliding window of Turns
-- `raw_text`: Formatted text
-- `project`, `project_path`, `git_branch`: Metadata
-- `source`: Platform
-- `timestamp`: Session start time
-- `code_snippets`: Extracted code blocks
+- `granularity`: `"turn-pair"` | `"small-window"` | `"session-outline"`
+- `start_turn_index`, `end_turn_index`, `turn_count`
+- `search_text`: Text used for embedding + BM25
+- `raw_preview`: First 1000 chars of the raw span (for result preview)
+- `raw_length`: Full raw text length
+- `project`, `project_path`, `git_branch`, `source`, `timestamp`: Metadata
+- `snippet_ids`, `code_count`, `code_languages`: Code snippet pointers
+
+**RawSpan**: Full-fidelity original text, stored in SQLite
+- `id`: `{session_id}:{span_key}` (e.g. `...:s4e9`, `...:tp0e1`, `...:outline`)
+- `session_id`, `start_turn_index`, `end_turn_index`
+- `raw_text`: Complete, untruncated
+- `code_snippets`: Full code blocks (not just metadata)
+- `snippet_ids`: Parallel to `code_snippets`
 
 **SearchResult**: Query result
 - `session_id`: Source session
