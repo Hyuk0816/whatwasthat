@@ -432,9 +432,9 @@ class SearchEngine:
             # OP-RAG: decision/memory 모드는 시간순(turn index) 정렬 — 인과 흐름 보존
             # code 모드는 점수 순 — 가장 관련 높은 스니펫 우선
             if mode == "code":
-                scored.sort(key=lambda x: x[1], reverse=True)
+                scored.sort(key=lambda x: (-x[1], x[0].id))
             else:
-                scored.sort(key=lambda x: x[2])  # start_turn_index 오름차순
+                scored.sort(key=lambda x: (x[2], x[0].id))  # start_turn_index 오름차순
 
             chunks = [c for c, _, _ in scored]
             first_chunk = chunks[0]
@@ -450,7 +450,7 @@ class SearchEngine:
                 started_at=first_chunk.timestamp,
             ))
 
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(key=lambda r: (-r.score, r.session_id))
 
         return results[:top_k]
 
