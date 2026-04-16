@@ -275,7 +275,7 @@ def _rerank(
                     right_chunk_index,
                 )
 
-    adjusted.sort(key=lambda item: item[1], reverse=True)
+    adjusted.sort(key=lambda item: (-item[1], item[0].id))
     return adjusted
 
 
