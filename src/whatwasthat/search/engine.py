@@ -520,5 +520,5 @@ class SearchEngine:
                 continue
             seen.add(r.session_id)
             merged.append(r)
-        merged.sort(key=lambda r: r.score, reverse=True)
+        merged.sort(key=lambda r: (-r.score, r.session_id))
         return merged[:top_k]
