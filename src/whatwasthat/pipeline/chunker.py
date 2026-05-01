@@ -76,14 +76,15 @@ def _format_outline_turns(turns: list[Turn], attr: str) -> str:
 
 def _meta_values(
     meta: SessionMeta | None,
-) -> tuple[str, str, str, str, datetime | None]:
+) -> tuple[str, str, str, str, str, datetime | None]:
     """Chunk 공통 메타 필드 반환."""
     if meta is None:
-        return "", "", "", "claude-code", None
+        return "", "", "", "", "claude-code", None
     return (
         meta.project,
         meta.project_path,
         meta.git_branch,
+        meta.env,
         meta.source,
         meta.started_at,
     )
@@ -128,7 +129,7 @@ def _build_chunk_and_span(
     if enforce_min_chars and len(raw_text) < _MIN_CHUNK_CHARS:
         return None
 
-    project, project_path, git_branch, source, timestamp = _meta_values(meta)
+    project, project_path, git_branch, env, source, timestamp = _meta_values(meta)
     code_snippets, snippet_ids, code_languages = _collect_code_metadata(turns, span_id)
 
     span = RawSpan(
@@ -155,6 +156,7 @@ def _build_chunk_and_span(
         project=project,
         project_path=project_path,
         git_branch=git_branch,
+        env=env,
         source=source,
         snippet_ids=snippet_ids,
         code_count=len(code_snippets),
