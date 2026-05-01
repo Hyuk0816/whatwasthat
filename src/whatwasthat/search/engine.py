@@ -294,6 +294,7 @@ class SearchEngine:
         query: str,
         project: str | None = None,
         top_k: int = 10,
+        env: str | None = None,
         source: str | None = None,
         git_branch: str | None = None,
         mode: str | None = None,
@@ -313,7 +314,12 @@ class SearchEngine:
                 ) from e
 
         hits = self._vector.search(
-            query, top_k=candidate_top_k, project=project, source=source, git_branch=git_branch,
+            query,
+            top_k=candidate_top_k,
+            project=project,
+            env=env,
+            source=source,
+            git_branch=git_branch,
             since_epoch=since_epoch, until_epoch=until_epoch,
         )
         if not hits:
@@ -407,6 +413,7 @@ class SearchEngine:
                 project=meta.get("project", ""),
                 project_path=meta.get("project_path", ""),
                 git_branch=meta.get("git_branch", ""),
+                env=meta.get("env", ""),
                 source=meta.get("source", "claude-code"),
                 snippet_ids=snippet_ids,
                 code_count=int(meta.get("code_count", 0) or 0),
@@ -446,6 +453,7 @@ class SearchEngine:
                 score=best_score,
                 project=first_chunk.project,
                 git_branch=first_chunk.git_branch,
+                env=first_chunk.env,
                 source=first_chunk.source,
                 started_at=first_chunk.timestamp,
             ))
@@ -459,6 +467,7 @@ class SearchEngine:
         query: str,
         project: str | None = None,
         top_k: int = 10,
+        env: str | None = None,
         source: str | None = None,
         git_branch: str | None = None,
         mode: str | None = None,
@@ -477,7 +486,7 @@ class SearchEngine:
         # 1차: 원래 요청 그대로
         primary = self.search(
             query, project=project, top_k=top_k,
-            source=source, git_branch=git_branch, mode=mode, date=date,
+            env=env, source=source, git_branch=git_branch, mode=mode, date=date,
         )
 
         top_score = primary[0].score if primary else 0.0
@@ -490,7 +499,7 @@ class SearchEngine:
         if top_score >= self._MEDIUM_SCORE_THRESHOLD and mode is None:
             decision_hits = self.search(
                 query, project=project, top_k=top_k,
-                source=source, git_branch=git_branch, mode="decision", date=date,
+                env=env, source=source, git_branch=git_branch, mode="decision", date=date,
             )
             return self._merge_by_session(primary, decision_hits, top_k)
 
@@ -498,7 +507,7 @@ class SearchEngine:
         if project is not None:
             expanded = self.search(
                 query, project=None, top_k=top_k,
-                source=source, git_branch=git_branch, mode=mode, date=date,
+                env=env, source=source, git_branch=git_branch, mode=mode, date=date,
             )
             if expanded:
                 return self._merge_by_session(primary, expanded, top_k)

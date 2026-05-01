@@ -143,6 +143,45 @@ Output:
 
 ---
 
+### search_remote_memory
+
+Search the remote WWT gateway instead of the local index.
+
+**Signature**
+```python
+def search_remote_memory(
+    query: str,
+    env: str | None = None,
+    project: str | None = None,
+    cwd: str | None = None,
+    source: str | None = None,
+    git_branch: str | None = None,
+    date: str | None = None,
+) -> str
+```
+
+**Parameters**
+
+- `env`: remote namespace such as `home` or `office`
+- Other filters behave like `search_memory`
+
+**Behavior**
+
+- Calls the remote gateway `POST /v1/search/memory`
+- Keeps the same cwd-based project inference rule as local `search_memory`
+- Returns the gateway-formatted text payload directly
+
+**Example**
+```python
+search_remote_memory(
+    query="redis cache",
+    env="home",
+    cwd="/Users/user/projects/backend-api",
+)
+```
+
+---
+
 ### search_all
 
 Search across all conversations without filters.
@@ -210,6 +249,51 @@ Output:
 **Behavior**
 
 Same as `search_memory`, but no project/source/branch filtering.
+
+---
+
+### search_remote_all
+
+Search across every project stored on the remote gateway.
+
+**Signature**
+```python
+def search_remote_all(
+    query: str,
+    env: str | None = None,
+    date: str | None = None,
+) -> str
+```
+
+**Behavior**
+
+- Calls the remote gateway `POST /v1/search/all`
+- `env` narrows results to one remote namespace when provided
+
+---
+
+### search_remote_decision
+
+Search for decision context on the remote WWT gateway.
+
+**Signature**
+```python
+def search_remote_decision(
+    query: str,
+    env: str | None = None,
+    project: str | None = None,
+    cwd: str | None = None,
+    source: str | None = None,
+    git_branch: str | None = None,
+    date: str | None = None,
+) -> str
+```
+
+**Behavior**
+
+- Calls the remote gateway `POST /v1/search/decision`
+- Keeps the same cwd-based project inference as local `search_decision`
+- `env` narrows results to one remote namespace when provided
 
 ---
 
@@ -291,6 +375,27 @@ Output:
 **Behavior**
 
 Filters for decision-related language, giving higher scores to chunks with "chose", "decided", "trade-off", etc.
+
+---
+
+### recall_remote_chunk
+
+Expand a remote search hit into its full raw span text.
+
+**Signature**
+```python
+def recall_remote_chunk(chunk_id: str, include_neighbors: int = 0) -> str
+```
+
+**Behavior**
+
+- Calls the remote gateway `POST /v1/recall/chunk`
+- Mirrors local `recall_chunk` semantics but reads from the remote store
+
+**Example**
+```python
+recall_remote_chunk(chunk_id="abc123", include_neighbors=1)
+```
 
 ---
 
@@ -571,4 +676,3 @@ LLM: ingest_session("/path/to/large/dataset/")
 # Wait 10-30 seconds before searching
 # Then use search_memory/search_all
 ```
-

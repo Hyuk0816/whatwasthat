@@ -70,6 +70,7 @@ class Chunk(BaseModel):
     project: str = ""
     project_path: str = ""
     git_branch: str = ""
+    env: str = ""
     source: str = "claude-code"
     snippet_ids: list[str] = Field(default_factory=list)
     code_count: int = 0
@@ -146,6 +147,7 @@ class SessionMeta(BaseModel):
     git_branch: str
     started_at: datetime
     turn_count: int = 0
+    env: str = ""
     source: str = "claude-code"
 
 
@@ -158,5 +160,6 @@ class SearchResult(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     project: str = ""
     git_branch: str = ""
+    env: str = ""
     source: str = "claude-code"
     started_at: datetime | None = None

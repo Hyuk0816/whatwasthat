@@ -195,6 +195,7 @@ class VectorStore:
                 "project": c.project,
                 "project_path": c.project_path,
                 "git_branch": c.git_branch,
+                "env": c.env,
                 "chunk_index": c.start_turn_index,  # 세션 내 시작 턴 인덱스
                 "start_turn_index": c.start_turn_index,
                 "end_turn_index": c.end_turn_index,
@@ -369,6 +370,7 @@ class VectorStore:
         query: str,
         top_k: int = 10,
         project: str | None = None,
+        env: str | None = None,
         source: str | None = None,
         git_branch: str | None = None,
         since_epoch: int | None = None,
@@ -391,6 +393,8 @@ class VectorStore:
         filters: list[dict] = []
         if project:
             filters.append({"project": project})
+        if env:
+            filters.append({"env": env})
         if source:
             filters.append({"source": source})
         if git_branch:
@@ -435,6 +439,7 @@ class VectorStore:
         vec_metas: dict[str, dict] = {}
         _active_filters = {
             "project": project,
+            "env": env,
             "source": source,
             "git_branch": git_branch,
         }
@@ -476,6 +481,8 @@ class VectorStore:
                     cid = self._bm25_ids[idx]
                     meta = self._bm25_metas[idx] if idx < len(self._bm25_metas) else {}
                     if project and meta.get("project") != project:
+                        continue
+                    if env and meta.get("env") != env:
                         continue
                     if source and meta.get("source") != source:
                         continue

@@ -177,6 +177,73 @@ wwt ingest ./exported-sessions/
 
 ---
 
+### wwt remote-ingest
+
+Upload sessions discovered on the current machine to a remote WWT gateway.
+
+**Syntax**
+```bash
+wwt remote-ingest --env <name> --date <YYYY-MM-DD> [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--env <name>` | String | Required. Remote namespace such as `home`, `office` |
+| `--date <YYYY-MM-DD>` | String | Required. Upload only sessions started on that KST date |
+| `--source <platform>` | String | Optional. Restrict to `claude-code`, `gemini-cli`, `codex-cli` |
+| `--all-projects` | Flag | Skip current-project filter and upload every matching project |
+
+**Environment**
+
+| Variable | Description |
+|----------|-------------|
+| `WWT_REMOTE_BASE_URL` | Remote gateway base URL, for example `http://home-server:8000` |
+| `WWT_REMOTE_API_TOKEN` | Bearer token used by both ingest and remote MCP tools |
+| `WWT_REMOTE_TIMEOUT_SECONDS` | HTTP timeout in seconds |
+
+**Behavior**
+
+- Default scope is `current cwd project + date`
+- `--all-projects` removes the implicit cwd project filter
+- Sessions are POSTed to `/v1/ingest/sessions`
+
+**Examples**
+
+```bash
+wwt remote-ingest --env home --date 2026-05-01
+```
+
+```bash
+wwt remote-ingest --env home --date 2026-05-01 --source codex-cli --all-projects
+```
+
+---
+
+### wwt remote-ingest-all
+
+Upload all sessions for one platform to a remote WWT gateway.
+
+**Syntax**
+```bash
+wwt remote-ingest-all --env <name> --source <platform>
+```
+
+**Behavior**
+
+- `--source` is required
+- Project filter is not applied
+- Intended for first-time backfill or home-server sync jobs
+
+**Example**
+
+```bash
+wwt remote-ingest-all --env home --source claude-code
+```
+
+---
+
 ### wwt search
 
 Search across all conversations (hybrid vector + BM25).
@@ -476,6 +543,43 @@ Hook runs when session stops:
 
 ---
 
+## Remote Gateway
+
+### Run API Server
+
+```bash
+export WWT_HOME=/var/lib/wwt
+export WWT_REMOTE_API_TOKEN="change-me"
+wwt-remote-api
+```
+
+The server listens on port `8000` and exposes:
+
+- `POST /v1/ingest/sessions`
+- `POST /v1/search/memory`
+- `POST /v1/search/decision`
+- `POST /v1/search/all`
+- `POST /v1/recall/chunk`
+
+Search/recall responses use a uniform JSON shape:
+
+```json
+{"text": "...formatted result..."}
+```
+
+### Docker / Tailscale
+
+```bash
+cp docker/remote/.env.example docker/remote/.env
+docker compose -f docker/remote/docker-compose.yml up -d --build
+```
+
+- Mount a persistent `WWT_HOME` volume on the server
+- Put the gateway behind Tailscale or another private overlay
+- Point clients to the tailnet address with `WWT_REMOTE_BASE_URL`
+
+---
+
 ## Performance Tips
 
 ### For Large Datasets
@@ -586,4 +690,3 @@ chmod +x ~/.wwt/hooks/*.sh
 # Retry ingest
 wwt ingest ~/path/to/logs
 ```
-
