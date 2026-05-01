@@ -9,6 +9,8 @@ from mcp.server.fastmcp import FastMCP
 
 import whatwasthat.config as _config_module
 from whatwasthat.models import SearchResult
+from whatwasthat.remote.client import RemoteGatewayClient
+from whatwasthat.remote.config import RemoteGatewayConfig
 from whatwasthat.search.engine import SearchEngine
 from whatwasthat.storage.raw_store import RawSpanStore
 from whatwasthat.storage.vector import VectorStore
@@ -31,6 +33,7 @@ mcp = FastMCP(
 
 _engine: SearchEngine | None = None
 _raw_store: RawSpanStore | None = None
+_remote_client: RemoteGatewayClient | None = None
 
 
 def _get_engine() -> SearchEngine:
@@ -64,6 +67,13 @@ def _get_raw_store() -> RawSpanStore:
     return _raw_store
 
 
+def _get_remote_client() -> RemoteGatewayClient:
+    global _remote_client  # noqa: PLW0603
+    if _remote_client is None:
+        _remote_client = RemoteGatewayClient(RemoteGatewayConfig.from_env())
+    return _remote_client
+
+
 @contextmanager
 def _write_lock():
     """쓰기 작업 시 배타 락 획득 — 완료 후 즉시 해제.
@@ -71,6 +81,7 @@ def _write_lock():
     여러 MCP 프로세스가 동시에 ingest해도 순차 처리되어 데이터 유실 없음.
     """
     lock_path = _config_module.WWT_DATA_DIR / "wwt.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = open(lock_path, "w")  # noqa: SIM115
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)  # 블로킹 — 다른 writer 완료까지 대기
@@ -82,9 +93,10 @@ def _write_lock():
 
 def _reset_engine() -> None:
     """테스트용 싱글톤 리셋."""
-    global _engine, _raw_store  # noqa: PLW0603
+    global _engine, _raw_store, _remote_client  # noqa: PLW0603
     _engine = None
     _raw_store = None
+    _remote_client = None
 
 
 def _append_chunk_preview(
@@ -112,6 +124,7 @@ def _append_chunk_preview(
 @mcp.tool()
 def search_memory(
     query: str,
+    env: str | None = None,
     project: str | None = None,
     cwd: str | None = None,
     source: str | None = None,
@@ -160,7 +173,7 @@ def search_memory(
 
     # Self-ROUTE 자동 라우팅: 1차 결과 점수에 따라 확장 여부 결정
     results = engine.search_with_routing(
-        query, project=filter_project, source=source, git_branch=git_branch,
+        query, project=filter_project, env=env, source=source, git_branch=git_branch,
         date=date,
     )
 
@@ -183,7 +196,11 @@ def search_memory(
 
 
 @mcp.tool()
-def search_all(query: str, date: str | None = None) -> str:
+def search_all(
+    query: str,
+    env: str | None = None,
+    date: str | None = None,
+) -> str:
     """모든 프로젝트/모든 플랫폼에 걸쳐 통합 검색합니다 (크로스 프로젝트 회수용).
 
     사용자가 프로젝트/플랫폼/브랜치를 특정하지 않고, 다른 레포에서 풀었던
@@ -203,7 +220,7 @@ def search_all(query: str, date: str | None = None) -> str:
             해당 날짜에 시작된 세션만 반환합니다.
     """
     engine = _get_engine()
-    results = engine.search(query, project=None, date=date)
+    results = engine.search(query, project=None, env=env, date=date)
 
     if not results:
         return "관련 기억을 찾지 못했습니다."
@@ -226,6 +243,7 @@ def search_all(query: str, date: str | None = None) -> str:
 @mcp.tool()
 def search_decision(
     query: str,
+    env: str | None = None,
     project: str | None = None,
     cwd: str | None = None,
     source: str | None = None,
@@ -261,7 +279,7 @@ def search_decision(
         filter_project = cwd.rstrip("/").split("/")[-1]
 
     results = engine.search(
-        query, project=filter_project, source=source, git_branch=git_branch,
+        query, project=filter_project, env=env, source=source, git_branch=git_branch,
         mode="decision", date=date,
     )
 
@@ -281,6 +299,88 @@ def search_decision(
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _infer_project_filter(
+    *,
+    project: str | None,
+    cwd: str | None,
+    source: str | None,
+    git_branch: str | None,
+) -> str | None:
+    filter_project = project
+    if not filter_project and cwd and not source and not git_branch:
+        filter_project = cwd.rstrip("/").split("/")[-1]
+    return filter_project
+
+
+@mcp.tool()
+def search_remote_memory(
+    query: str,
+    env: str | None = None,
+    project: str | None = None,
+    cwd: str | None = None,
+    source: str | None = None,
+    git_branch: str | None = None,
+    date: str | None = None,
+) -> str:
+    client = _get_remote_client()
+    return client.search_memory(
+        query=query,
+        env=env,
+        project=_infer_project_filter(
+            project=project,
+            cwd=cwd,
+            source=source,
+            git_branch=git_branch,
+        ),
+        source=source,
+        git_branch=git_branch,
+        date=date,
+    )
+
+
+@mcp.tool()
+def search_remote_decision(
+    query: str,
+    env: str | None = None,
+    project: str | None = None,
+    cwd: str | None = None,
+    source: str | None = None,
+    git_branch: str | None = None,
+    date: str | None = None,
+) -> str:
+    client = _get_remote_client()
+    return client.search_decision(
+        query=query,
+        env=env,
+        project=_infer_project_filter(
+            project=project,
+            cwd=cwd,
+            source=source,
+            git_branch=git_branch,
+        ),
+        source=source,
+        git_branch=git_branch,
+        date=date,
+    )
+
+
+@mcp.tool()
+def search_remote_all(
+    query: str,
+    env: str | None = None,
+    date: str | None = None,
+) -> str:
+    return _get_remote_client().search_all(query=query, env=env, date=date)
+
+
+@mcp.tool()
+def recall_remote_chunk(chunk_id: str, include_neighbors: int = 0) -> str:
+    return _get_remote_client().recall_chunk(
+        chunk_id=chunk_id,
+        include_neighbors=include_neighbors,
+    )
 
 
 @mcp.tool()

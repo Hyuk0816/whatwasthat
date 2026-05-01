@@ -56,6 +56,18 @@ _TRIGGERS: list[tuple[str, list[str], str]] = [
         "search_all(query='...')",
     ),
     (
+        "원격 기억 조회",
+        [
+            "집 서버에 적재된 기억 조회해줘",
+            "회사 말고 home server 기억 좀 찾아봐",
+            "원격 게이트웨이에 쌓아둔 대화에서 찾아줘",
+        ],
+        (
+            "search_remote_memory/search_remote_decision/"
+            "search_remote_all(env='home' | 'office') + recall_remote_chunk"
+        ),
+    ),
+    (
         "특정 날짜 조회",
         [
             "어제 뭐 했지?",
@@ -98,10 +110,9 @@ USAGE_GUIDE_INLINE: str = (
     "- preview로 답이 부족하면 recall_chunk(chunk_id='...')로 원문 확장\n"
     "- include_neighbors=N으로 앞뒤 span까지 함께 회수\n\n"
     "[도구 선택]\n"
-    "- search_memory  : 현재 프로젝트 + 필터 기반 검색 (기본)\n"
-    "- search_all     : 모든 프로젝트/플랫폼 통합 검색\n"
-    "- search_decision: 의사결정 맥락(왜 A 대신 B)에 특화\n"
-    "- recall_chunk   : chunk_id로 원문 + 코드 스니펫 완전 조회\n"
+    "- search_memory / search_decision / search_all / recall_chunk: 로컬 인덱스 조회\n"
+    "- search_remote_memory / search_remote_decision /\n"
+    "  search_remote_all / recall_remote_chunk: 원격 게이트웨이 조회\n"
     "- ingest_session : 로그 경로 수동 색인"
 )
 
@@ -116,7 +127,8 @@ MEMORY_BLOCK_END = "<!-- wwt:end -->"
 USAGE_GUIDE_MARKDOWN: str = f"""{MEMORY_BLOCK_START}
 ## WWT (whatwasthat) 사용 규칙
 
-이 머신에는 WWT MCP 서버가 등록되어 있다. 아래 트리거가 오면 **다른 도구(git log, Bash, Read)보다 먼저** WWT를 호출한다.
+이 머신에는 WWT MCP 서버가 등록되어 있다.
+아래 트리거가 오면 **다른 도구(git log, Bash, Read)보다 먼저** WWT를 호출한다.
 
 ### 선제 호출 트리거
 {_format_trigger_markdown()}
@@ -126,17 +138,19 @@ USAGE_GUIDE_MARKDOWN: str = f"""{MEMORY_BLOCK_START}
 - `include_neighbors=N`으로 앞뒤 span까지 함께 회수
 
 ### 우선순위
-WWT 검색 결과가 있으면 그 위에 git log / work-plan / 파일 Read를 보강용으로 얹는다. WWT가 빈 결과를 주면 그때 다른 도구로 넘어간다.
+WWT 검색 결과가 있으면 그 위에 git log / work-plan / 파일 Read를 보강용으로 얹는다.
+WWT가 빈 결과를 주면 그때 다른 도구로 넘어간다.
 
 ### 도구 선택
-- `search_memory`  : 현재 프로젝트 + 필터 기반 검색 (기본)
-- `search_all`     : 모든 프로젝트/플랫폼 통합 검색
-- `search_decision`: 의사결정 맥락(왜 A 대신 B)에 특화
-- `recall_chunk`   : chunk_id로 원문 + 코드 스니펫 완전 조회
+- `search_memory` / `search_decision` / `search_all` / `recall_chunk` : 로컬 인덱스 조회
+- `search_remote_memory` / `search_remote_decision`
+  / `search_remote_all` / `recall_remote_chunk` : 원격 게이트웨이 조회
 - `ingest_session` : 로그 경로 수동 색인
 
 ### 블록 관리
-이 블록은 `wwt setup --with-memory`가 생성했다. 같은 명령을 다시 실행하면 최신 규칙으로 갱신되고, 제거하려면 `{MEMORY_BLOCK_START}`부터 `{MEMORY_BLOCK_END}`까지 삭제하면 된다.
+이 블록은 `wwt setup --with-memory`가 생성했다.
+같은 명령을 다시 실행하면 최신 규칙으로 갱신되고, 제거하려면
+`{MEMORY_BLOCK_START}`부터 `{MEMORY_BLOCK_END}`까지 삭제하면 된다.
 {MEMORY_BLOCK_END}
 """
 

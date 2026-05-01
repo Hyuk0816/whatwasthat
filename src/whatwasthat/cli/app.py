@@ -35,6 +35,63 @@ def _raw_spans_path(config) -> Path:
     return Path.home() / ".wwt" / "data" / "raw" / "spans.db"
 
 
+def _current_project_name() -> str:
+    """현재 작업 디렉토리 기준 프로젝트명."""
+    return Path.cwd().name
+
+
+def _remote_summary_counts(summary) -> tuple[int, int]:
+    """dict/model 모두 허용하는 요약 추출."""
+    if isinstance(summary, dict):
+        return int(summary.get("uploaded", 0)), int(summary.get("failed", 0))
+    return int(getattr(summary, "uploaded", 0)), int(getattr(summary, "failed", 0))
+
+
+def _run_remote_ingest_for_date(
+    *,
+    env: str,
+    date: str,
+    source: str | None,
+    project: str | None,
+) -> None:
+    """날짜 범위 세션 discovery 후 원격 게이트웨이에 업로드."""
+    from whatwasthat.remote.client import RemoteGatewayClient
+    from whatwasthat.remote.config import RemoteGatewayConfig
+    from whatwasthat.remote.discovery import collect_sessions_for_date
+
+    sessions = collect_sessions_for_date(
+        env=env,
+        date=date,
+        source=source,
+        project=project,
+    )
+    if not sessions:
+        typer.echo("업로드할 세션이 없습니다.")
+        return
+
+    client = RemoteGatewayClient(RemoteGatewayConfig.from_env())
+    summary = client.upload_sessions(sessions)
+    uploaded, failed = _remote_summary_counts(summary)
+    typer.echo(f"원격 업로드 완료: {uploaded} 성공, {failed} 실패")
+
+
+def _run_remote_ingest_all(*, env: str, source: str) -> None:
+    """특정 source 전체 세션을 원격 게이트웨이에 업로드."""
+    from whatwasthat.remote.client import RemoteGatewayClient
+    from whatwasthat.remote.config import RemoteGatewayConfig
+    from whatwasthat.remote.discovery import collect_all_sessions_for_source
+
+    sessions = collect_all_sessions_for_source(env=env, source=source)
+    if not sessions:
+        typer.echo("업로드할 세션이 없습니다.")
+        return
+
+    client = RemoteGatewayClient(RemoteGatewayConfig.from_env())
+    summary = client.upload_sessions(sessions)
+    uploaded, failed = _remote_summary_counts(summary)
+    typer.echo(f"원격 업로드 완료: {uploaded} 성공, {failed} 실패")
+
+
 class _IngestStats(TypedDict):
     sessions: int
     chunks: int
@@ -645,6 +702,31 @@ def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> N
         f"Done: 1 session, {len(spans)} spans, "
         f"{len(chunks)} chunks ({embedded} freshly embedded)",
     )
+
+
+@app.command("remote-ingest")
+def remote_ingest(
+    env: str = typer.Option(..., "--env", help="원격 메모리 환경 이름"),
+    date: str = typer.Option(..., "--date", help="KST 기준 수집 날짜 (YYYY-MM-DD)"),
+    source: str = typer.Option(None, "--source", "-s", help="플랫폼 필터"),
+    all_projects: bool = typer.Option(
+        False,
+        "--all-projects",
+        help="현재 cwd 대신 모든 프로젝트 업로드 허용",
+    ),
+) -> None:
+    """현재 프로젝트 기본 범위로 원격 메모리 게이트웨이에 업로드."""
+    project = None if all_projects else _current_project_name()
+    _run_remote_ingest_for_date(env=env, date=date, source=source, project=project)
+
+
+@app.command("remote-ingest-all")
+def remote_ingest_all(
+    env: str = typer.Option(..., "--env", help="원격 메모리 환경 이름"),
+    source: str = typer.Option(..., "--source", "-s", help="플랫폼 필터"),
+) -> None:
+    """특정 source의 세션을 전체 프로젝트 범위에서 원격 업로드."""
+    _run_remote_ingest_all(env=env, source=source)
 
 
 @app.command()

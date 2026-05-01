@@ -17,11 +17,15 @@ dependencies = [
     "mcp>=1.0",
     "rank-bm25>=0.2.2",
     "kiwipiepy>=0.23.1",
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "uvicorn>=0.34",
 ]
 
 [project.scripts]
 wwt = "whatwasthat.cli.app:app"
 wwt-mcp = "whatwasthat.server.mcp:mcp.run"
+wwt-remote-api = "whatwasthat.server.http_api:main"
 
 [build-system]
 requires = ["hatchling"]
