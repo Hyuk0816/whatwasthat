@@ -91,6 +91,10 @@ wwt setup
 | `search_decision` | "왜 Memcached 대신 Redis였지?" |
 | `search_all` | 크로스 프로젝트, 크로스 에이전트 회수 |
 | `recall_chunk` | 검색 결과의 `chunk_id`로 전체 원문과 코드 스니펫 조회 |
+| `search_remote_memory` | 집/회사 서버처럼 원격 게이트웨이에 쌓인 기억 조회 |
+| `search_remote_decision` | 원격 게이트웨이에서 의사결정 이유 조회 |
+| `search_remote_all` | 원격 게이트웨이 전체 범위 검색 |
+| `recall_remote_chunk` | 원격 검색 결과의 `chunk_id` 원문 확장 |
 
 `search_memory`는 **자동 라우팅**됩니다 — 프로젝트 필터가 충분한 결과를 못 내면, 자동으로 전체 프로젝트로 확장합니다 (Self-ROUTE, EMNLP 2024). 한 번의 호출, 재시도 없음.
 
@@ -140,6 +144,60 @@ uv tool install whatwasthat          # uv (권장)
 ```
 
 그 다음 `wwt setup` 한 번. 머신에 이미 설치된 모든 에이전트(Claude Code, Gemini CLI, Codex CLI)에 MCP 서버를 등록하고 자동 캡처 Hook을 설치합니다. 여러 번 실행해도 안전합니다.
+
+## Remote Mode
+
+로컬 노트북과 집/회사 서버를 같이 쓰는 경우, 서버 쪽에 WWT 데이터를 모으고 각 클라이언트 에이전트는 원격 게이트웨이로 검색할 수 있습니다.
+
+### 클라이언트 환경 변수
+
+```bash
+export WWT_REMOTE_BASE_URL="http://home-server:8000"
+export WWT_REMOTE_API_TOKEN="change-me"
+export WWT_REMOTE_TIMEOUT_SECONDS="30"
+```
+
+### 원격 업로드
+
+기존 `remote-ingest`/`remote-ingest-all` CLI는 위 환경 변수를 읽어 세션을 원격 게이트웨이로 업로드합니다.
+
+```bash
+wwt remote-ingest --env home --date 2026-05-01
+wwt remote-ingest --env home --date 2026-05-01 --source codex-cli --all-projects
+wwt remote-ingest-all --env home --source claude-code
+```
+
+### 원격 검색 MCP 도구
+
+- `search_remote_memory`: 현재 프로젝트 기준 원격 검색
+- `search_remote_decision`: 원격 의사결정 검색
+- `search_remote_all`: 원격 전체 검색
+- `recall_remote_chunk`: 원격 chunk 원문 확장
+
+로컬과 원격 도구 이름을 분리해, 에이전트가 어느 저장소를 조회하는지 명확히 유지합니다.
+
+## Remote Gateway Server
+
+게이트웨이는 Bearer 인증이 걸린 FastAPI 서버입니다. 같은 포맷의 ingest/search/recall API를 제공하고, 검색 응답은 모두 `{ "text": "..." }` 형태입니다.
+
+### 직접 실행
+
+```bash
+export WWT_HOME=/var/lib/wwt
+export WWT_REMOTE_API_TOKEN="change-me"
+wwt-remote-api
+```
+
+### Docker Compose
+
+예시 파일은 [docker/remote/Dockerfile](/Users/hyuk/PycharmProjects/whatwasthat/docker/remote/Dockerfile), [docker/remote/docker-compose.yml](/Users/hyuk/PycharmProjects/whatwasthat/docker/remote/docker-compose.yml), [docker/remote/.env.example](/Users/hyuk/PycharmProjects/whatwasthat/docker/remote/.env.example)에 있습니다.
+
+```bash
+cp docker/remote/.env.example docker/remote/.env
+docker compose -f docker/remote/docker-compose.yml up -d --build
+```
+
+Tailscale 같은 overlay network 뒤에 두고 `WWT_REMOTE_BASE_URL`을 tailnet 주소로 맞추면, 집/회사 어디서든 같은 기억 저장소를 조회할 수 있습니다.
 
 ## 요구사항
 

@@ -1,0 +1,18 @@
+services:
+  wwt-remote:
+    build:
+      context: ../..
+      dockerfile: docker/remote/Dockerfile
+    env_file:
+      - .env
+    environment:
+      WWT_HOME: ${WWT_HOME:-/data/wwt}
+      WWT_REMOTE_API_TOKEN: ${WWT_REMOTE_API_TOKEN}
+    ports:
+      - "${WWT_REMOTE_PORT:-8000}:8000"
+    volumes:
+      - wwt_remote_data:${WWT_HOME:-/data/wwt}
+    restart: unless-stopped
+
+volumes:
+  wwt_remote_data:

@@ -14,3 +14,4 @@ week_work/
 docs/plans/
 tests/
 logs/
+.env
