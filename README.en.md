@@ -35,14 +35,16 @@ That's it. Existing logs are auto-ingested. Future sessions auto-capture on sess
 
 ## How it works
 
-When a session ends, the agent's hook fires. WWT parses the log, extracts code, splits the conversation at **three sizes at the same time**, embeds the search text locally (no API), stores the search index in ChromaDB, and keeps the full raw text in SQLite.
+When a session ends, the agent's hook only queues the transcript path in local SQLite and returns. One background worker coalesces consecutive events, parses the log, extracts code, splits the conversation at **three sizes at the same time**, and embeds the search text locally (no API). The search index lives in ChromaDB and full raw text stays in SQLite.
 
 When you ask *"how did I do X last time?"* — any agent calls `search_memory` over MCP. WWT searches, **re-sorts the results to match the intent of the question**, returns a compact preview, and lets the agent expand the exact piece with `recall_chunk`. Including the *why*, not just the *what*.
 
 ```
-session ends → hook → parse → split (3 sizes) → embed → ChromaDB + raw SQLite
+session ends → hook → SQLite queue → one worker → parse/split/embed → ChromaDB + raw SQLite
 question     → MCP  → search → re-sort → preview → optional full recall
 ```
+
+Hooks never wait for embedding to finish. Inspect or recover deferred jobs with `wwt queue-status` and `wwt worker --once`.
 
 ### Three sizes at once (v1.1)
 

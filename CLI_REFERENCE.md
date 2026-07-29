@@ -177,6 +177,24 @@ wwt ingest ./exported-sessions/
 
 ---
 
+### Deferred auto-ingest commands
+
+Hooks call `wwt enqueue` instead of waiting for `wwt ingest`:
+
+```bash
+wwt enqueue <transcript-path> --source codex-cli
+wwt queue-status
+wwt worker --once
+```
+
+- `enqueue` durably coalesces repeated transcript paths and requests one detached worker.
+- `worker` uses a 15-second debounce, processes at most 16 paths per cycle, and exits after 120 idle seconds.
+- `worker --once` processes jobs that are ready now and exits.
+- `queue-status` shows pending/failed counts and recent permanent or exhausted errors.
+- Manual `wwt ingest` remains synchronous for recovery and bulk imports.
+
+---
+
 ### wwt remote-ingest
 
 Upload sessions discovered on the current machine to a remote WWT gateway.
@@ -451,10 +469,10 @@ Data is permanently deleted from `~/.wwt/data/vector/`. Re-run `wwt setup` or `w
 ```
 ~/.wwt/
 ├── data/
-│   └── vector/                    # ChromaDB index
-│       ├── chroma.sqlite3         # Vector metadata
-│       ├── 2da2e4d6.parquet       # Vector embeddings (HNSW index)
-│       └── 2da2e4d6.parquet.pkl   # Metadata
+│   ├── vector/                    # ChromaDB index
+│   ├── raw/spans.db               # Canonical raw spans
+│   ├── bm25/index.pkl             # Keyword index
+│   └── queue/jobs.db              # Durable deferred-ingest queue
 └── ingest.log                      # Auto-ingest log (from hooks)
 ```
 
@@ -478,7 +496,8 @@ First run downloads ~470MB; subsequent runs use cache.
 
 ## Hook Integration
 
-Once `wwt setup` completes, conversation logs are automatically ingested.
+Once `wwt setup` completes, each hook queues its transcript and returns. A
+single on-demand worker performs parsing and embedding in the background.
 
 ### Claude Code (Stop Hook)
 

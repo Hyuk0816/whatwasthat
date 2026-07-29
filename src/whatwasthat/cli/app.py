@@ -35,6 +35,12 @@ def _raw_spans_path(config) -> Path:
     return Path.home() / ".wwt" / "data" / "raw" / "spans.db"
 
 
+def _data_dir(config) -> Path:
+    if hasattr(config, "data_dir"):
+        return Path(config.data_dir)
+    return Path(config.chroma_path).parent
+
+
 def _current_project_name() -> str:
     """현재 작업 디렉토리 기준 프로젝트명."""
     return Path.cwd().name
@@ -287,15 +293,7 @@ if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     exit 0
 fi
 
-(
-  echo "$TS source=codex-cli project=$PROJECT" \
-       "session=$SESSION_ID turn=$TURN_ID" \
-       "transcript=$TRANSCRIPT_PATH status=ingest_start"
-  {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
-  echo "$TS_DONE source=codex-cli project=$PROJECT" \
-       "session=$SESSION_ID status=ingest_done"
-) >> "$LOG" &
+{wwt_path} enqueue "$TRANSCRIPT_PATH" --source codex-cli >> "$LOG" 2>&1
 exit 0
 """)
     script.chmod(0o755)
@@ -326,15 +324,7 @@ if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     exit 0
 fi
 
-(
-  echo "$TS source=gemini-cli project=$PROJECT" \
-       "session=$SESSION_ID" \
-       "transcript=$TRANSCRIPT_PATH status=ingest_start"
-  {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
-  echo "$TS_DONE source=gemini-cli project=$PROJECT" \
-       "session=$SESSION_ID status=ingest_done"
-) >> "$LOG" &
+{wwt_path} enqueue "$TRANSCRIPT_PATH" --source gemini-cli >> "$LOG" 2>&1
 exit 0
 """)
     script.chmod(0o755)
@@ -435,15 +425,7 @@ if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
     exit 0
 fi
 
-(
-  echo "$TS source=claude-code project=$PROJECT" \
-       "session=$SESSION_ID" \
-       "transcript=$TRANSCRIPT_PATH status=ingest_start"
-  {wwt_path} ingest "$TRANSCRIPT_PATH" 2>&1
-  TS_DONE=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)
-  echo "$TS_DONE source=claude-code project=$PROJECT" \
-       "session=$SESSION_ID status=ingest_done"
-) >> "$LOG" &
+{wwt_path} enqueue "$TRANSCRIPT_PATH" --source claude-code >> "$LOG" 2>&1
 exit 0
 """
     hook_script.write_text(hook_content)
@@ -654,53 +636,133 @@ exit 0
 
 
 @app.command()
+def enqueue(
+    path: str = typer.Argument(help="Queue one transcript path for background ingestion"),
+    source: str = typer.Option(..., "--source", help="claude-code, gemini-cli, codex-cli"),
+) -> None:
+    """Queue a transcript and return without waiting for embedding."""
+    valid_sources = {"claude-code", "gemini-cli", "codex-cli"}
+    if source not in valid_sources:
+        raise typer.BadParameter(
+            f"source must be one of: {', '.join(sorted(valid_sources))}",
+            param_hint="--source",
+        )
+    config = _get_config()
+    from whatwasthat.ingest_queue import IngestQueue
+    from whatwasthat.worker import append_ingest_log, spawn_worker
+
+    enqueue_start = time.monotonic()
+    queue = IngestQueue(config.ingest_queue_path)
+    job = queue.enqueue(Path(path), source=source)
+    append_ingest_log(
+        config.home_dir / "ingest.log",
+        f"source={source} transcript={job.transcript_path} "
+        f"revision={job.revision} status=enqueue "
+        f"elapsed_ms={int((time.monotonic() - enqueue_start) * 1000)}",
+    )
+    started = spawn_worker(config)
+    typer.echo(
+        f"Queued: {job.transcript_path} (revision={job.revision}, "
+        f"worker={'started' if started else 'running'})",
+    )
+
+
+@app.command("worker")
+def worker_command(
+    once: bool = typer.Option(False, "--once", help="Process currently ready jobs and exit"),
+    debounce: float = typer.Option(15.0, "--debounce", min=0.0),
+    poll: float = typer.Option(1.0, "--poll", min=0.0),
+    idle_timeout: float = typer.Option(120.0, "--idle-timeout", min=0.0),
+    max_jobs: int = typer.Option(16, "--max-jobs", min=1),
+) -> None:
+    """Run the single deferred-ingest worker."""
+    from whatwasthat.worker import run_worker
+
+    result = run_worker(
+        config=_get_config(),
+        once=once,
+        debounce_seconds=debounce,
+        poll_seconds=poll,
+        idle_timeout_seconds=idle_timeout,
+        max_jobs=max_jobs,
+    )
+    if result.already_running:
+        typer.echo("Worker is already running.")
+    else:
+        typer.echo(f"Worker exited after {result.cycles} cycle(s).")
+
+
+@app.command("queue-status")
+def queue_status() -> None:
+    """Show pending and failed deferred-ingest jobs."""
+    config = _get_config()
+    from whatwasthat.ingest_queue import IngestQueue
+
+    queue = IngestQueue(config.ingest_queue_path)
+    summary = queue.summary()
+    typer.echo(f"pending={summary.pending} failed={summary.failed}")
+    if summary.oldest_pending_at is not None:
+        age = max(0, int(time.time() - summary.oldest_pending_at))
+        typer.echo(f"oldest_pending_age_seconds={age}")
+    for job in queue.list_jobs():
+        retry_in = max(0, int(job.next_attempt_at - time.time()))
+        typer.echo(
+            f"{job.state} path={job.transcript_path} source={job.source} "
+            f"revision={job.revision} attempts={job.attempts} "
+            f"retry_in_seconds={retry_in} error={job.last_error or '-'}",
+        )
+
+
+@app.command()
 def ingest(path: str = typer.Argument(help="JSONL file or directory path")) -> None:
     """Ingest conversation logs into the vector store."""
     config = _get_config()
     file_path = Path(path).expanduser()
 
-    from whatwasthat.pipeline.chunker import chunk_turns
-    from whatwasthat.pipeline.parser import detect_parser
+    from whatwasthat.pipeline.ingest import (
+        PermanentIngestError,
+        prepare_transcript,
+        store_prepared_transcript,
+    )
+    from whatwasthat.storage.locking import write_lock
     from whatwasthat.storage.raw_store import RawSpanStore
     from whatwasthat.storage.vector import VectorStore
 
-    vector = VectorStore(config.chroma_path)
-    vector.initialize()
-    raw_store = RawSpanStore(_raw_spans_path(config))
-    raw_store.initialize()
-
     if file_path.is_dir():
-        # Delegate to the shared bulk helper (parse + chunk + single upsert + BM25).
-        _bulk_ingest_directory(
-            vector,
-            file_path,
-            patterns=["**/*.jsonl", "**/*.json"],
-            label=file_path.name or "ingest",
-            raw_store=raw_store,
-            rebuild_at_end=True,
-        )
+        with write_lock(_data_dir(config)):
+            vector = VectorStore(config.chroma_path)
+            vector.initialize()
+            raw_store = RawSpanStore(_raw_spans_path(config))
+            raw_store.initialize()
+            _bulk_ingest_directory(
+                vector,
+                file_path,
+                patterns=["**/*.jsonl", "**/*.json"],
+                label=file_path.name or "ingest",
+                raw_store=raw_store,
+                rebuild_at_end=True,
+            )
         return
 
-    # Single file — keep incremental upsert path (change-detection benefit).
-    parser = detect_parser(file_path)
-    if parser is None:
-        typer.echo(f"Unsupported file format: {file_path}")
+    try:
+        prepared = prepare_transcript(file_path)
+    except PermanentIngestError as exc:
+        typer.echo(str(exc))
         return
-    session_id = file_path.stem
-    turns = parser.parse_turns(file_path)
-    if not turns:
-        typer.echo("No turns parsed.")
-        return
-    meta = parser.parse_meta(file_path)
-    spans, chunks = chunk_turns(turns, session_id=session_id, meta=meta)
-    if not chunks:
-        typer.echo("No chunks produced.")
-        return
-    raw_store.upsert_spans(spans)
-    embedded = vector.upsert_session_chunks(session_id, chunks, rebuild_bm25=True)
+    with write_lock(_data_dir(config)):
+        vector = VectorStore(config.chroma_path)
+        vector.initialize()
+        raw_store = RawSpanStore(_raw_spans_path(config))
+        raw_store.initialize()
+        result = store_prepared_transcript(
+            prepared,
+            raw_store=raw_store,
+            vector_store=vector,
+            rebuild_bm25=True,
+        )
     typer.echo(
-        f"Done: 1 session, {len(spans)} spans, "
-        f"{len(chunks)} chunks ({embedded} freshly embedded)",
+        f"Done: 1 session, {result.spans} spans, "
+        f"{result.chunks} chunks ({result.embedded} freshly embedded)",
     )
 
 
@@ -888,22 +950,33 @@ def reset(
     import shutil as _shutil
 
     config = _get_config()
-    vector_dir = config.chroma_path
-    raw_dir = _raw_spans_path(config).parent
-    bm25_dir = config.bm25_index_path.parent
+    from whatwasthat.storage.locking import InterProcessLock, write_lock
 
-    targets = [p for p in (vector_dir, raw_dir, bm25_dir) if p.exists()]
-    if not targets:
-        typer.echo("삭제할 데이터가 없습니다.")
-        return
+    worker_lock = InterProcessLock(config.worker_lock_path)
+    if not worker_lock.acquire(blocking=False):
+        typer.echo("Worker is running; wait for it to exit before resetting data.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        vector_dir = config.chroma_path
+        raw_dir = _raw_spans_path(config).parent
+        bm25_dir = config.bm25_index_path.parent
+        queue_dir = config.ingest_queue_path.parent
 
-    if not force:
-        confirm = typer.confirm("모든 적재 데이터를 삭제합니다. 계속할까요?")
-        if not confirm:
-            typer.echo("취소되었습니다.")
+        targets = [p for p in (vector_dir, raw_dir, bm25_dir, queue_dir) if p.exists()]
+        if not targets:
+            typer.echo("삭제할 데이터가 없습니다.")
             return
 
-    for target in targets:
-        _shutil.rmtree(target)
-    typer.echo("✓ 모든 적재 데이터 삭제 완료 (vector + raw + bm25)")
-    typer.echo("  다시 적재하려면: wwt setup 또는 wwt ingest <경로>")
+        if not force:
+            confirm = typer.confirm("모든 적재 데이터를 삭제합니다. 계속할까요?")
+            if not confirm:
+                typer.echo("취소되었습니다.")
+                return
+
+        with write_lock(_data_dir(config)):
+            for target in targets:
+                _shutil.rmtree(target)
+        typer.echo("✓ 모든 적재 데이터 삭제 완료 (vector + raw + bm25 + queue)")
+        typer.echo("  다시 적재하려면: wwt setup 또는 wwt ingest <경로>")
+    finally:
+        worker_lock.release()

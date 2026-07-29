@@ -32,6 +32,14 @@ def _resolve_bm25_index_path() -> Path:
 def _resolve_bm25_version_path() -> Path:
     return _resolve_data_dir() / "bm25" / "version.txt"
 
+
+def _resolve_ingest_queue_path() -> Path:
+    return _resolve_data_dir() / "queue" / "jobs.db"
+
+
+def _resolve_worker_lock_path() -> Path:
+    return _resolve_data_dir() / "worker.lock"
+
 WWT_HOME = _resolve_wwt_home()
 WWT_DATA_DIR = _resolve_data_dir()
 CHROMA_DB_PATH = _resolve_chroma_path()
@@ -39,6 +47,8 @@ RAW_SPANS_DB_PATH = _resolve_raw_spans_path()
 BM25_INDEX_DIR = WWT_DATA_DIR / "bm25"
 BM25_INDEX_PATH = _resolve_bm25_index_path()
 BM25_VERSION_PATH = _resolve_bm25_version_path()
+INGEST_QUEUE_PATH = _resolve_ingest_queue_path()
+WORKER_LOCK_PATH = _resolve_worker_lock_path()
 
 EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 
@@ -52,4 +62,6 @@ class WwtConfig(BaseModel):
     raw_spans_path: Path = Field(default_factory=_resolve_raw_spans_path)
     bm25_index_path: Path = Field(default_factory=_resolve_bm25_index_path)
     bm25_version_path: Path = Field(default_factory=_resolve_bm25_version_path)
+    ingest_queue_path: Path = Field(default_factory=_resolve_ingest_queue_path)
+    worker_lock_path: Path = Field(default_factory=_resolve_worker_lock_path)
     embedding_model: str = EMBEDDING_MODEL

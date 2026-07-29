@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
-from contextlib import contextmanager
-
 from mcp.server.fastmcp import FastMCP
 
 import whatwasthat.config as _config_module
@@ -12,6 +9,7 @@ from whatwasthat.models import SearchResult
 from whatwasthat.remote.client import RemoteGatewayClient
 from whatwasthat.remote.config import RemoteGatewayConfig
 from whatwasthat.search.engine import SearchEngine
+from whatwasthat.storage.locking import write_lock
 from whatwasthat.storage.raw_store import RawSpanStore
 from whatwasthat.storage.vector import VectorStore
 from whatwasthat.timeutil import format_kst
@@ -74,21 +72,9 @@ def _get_remote_client() -> RemoteGatewayClient:
     return _remote_client
 
 
-@contextmanager
 def _write_lock():
-    """쓰기 작업 시 배타 락 획득 — 완료 후 즉시 해제.
-
-    여러 MCP 프로세스가 동시에 ingest해도 순차 처리되어 데이터 유실 없음.
-    """
-    lock_path = _config_module.WWT_DATA_DIR / "wwt.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = open(lock_path, "w")  # noqa: SIM115
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)  # 블로킹 — 다른 writer 완료까지 대기
-        yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        fd.close()
+    """Compatibility wrapper around the shared local writer lock."""
+    return write_lock(_config_module.WWT_DATA_DIR)
 
 
 def _reset_engine() -> None:
@@ -498,13 +484,13 @@ def ingest_session(path: str) -> str:
         sessions = {sid: parser.parse_turns(file_path)}
         meta_map = {sid: parser.parse_meta(file_path)}
 
-    engine = _get_engine()
-    raw_store = _get_raw_store()
     total_chunks = 0
     total_spans = 0
     total_embedded = 0
 
     with _write_lock():
+        engine = _get_engine()
+        raw_store = _get_raw_store()
         for session_id, turns in sessions.items():
             if not turns:
                 continue

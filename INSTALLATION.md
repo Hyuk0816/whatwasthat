@@ -193,7 +193,7 @@ Should show `whatwasthat` server.
 After `wwt setup`:
 
 1. Settings should auto-register MCP
-2. Stop Hook auto-installs
+2. Stop Hook auto-installs and queues transcripts for the background worker
 
 **Verify:**
 ```bash
@@ -227,7 +227,7 @@ claude mcp add whatwasthat --scope user -- wwt-mcp
 
 After `wwt setup`:
 
-1. AfterAgent Hook auto-installs
+1. AfterAgent Hook auto-installs and queues transcripts for the background worker
 2. MCP auto-registers
 
 **Verify:**
@@ -264,7 +264,7 @@ gemini mcp add whatwasthat wwt-mcp --scope user
 
 After `wwt setup`:
 
-1. Stop Hook auto-installs
+1. Stop Hook auto-installs and queues transcripts for the background worker
 2. MCP auto-registers
 3. Hook auto-registers in `~/.codex/hooks.json`
 
@@ -602,6 +602,10 @@ After installation:
 # Auto-ingest log
 tail -f ~/.wwt/ingest.log
 
+# Deferred job status / manual recovery
+wwt queue-status
+wwt worker --once
+
 # Check db
 ls -lah ~/.wwt/data/vector/
 ```
@@ -615,4 +619,3 @@ python3 -c "from huggingface_hub import snapshot_download; print(snapshot_downlo
 # Test CLI
 wwt --version
 ```
-
