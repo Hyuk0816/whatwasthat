@@ -11,8 +11,8 @@ WWT (What Was That?) is a semantic search engine for AI conversation logs. It au
 │ CLI (typer) │  MCP Server (FastMCP)   │  Auto-Ingest Hook │
 │  - search  │  - search_memory        │  - Stop Hook      │
 │  - ingest  │  - search_all           │  - AfterAgent Hook│
-│  - why     │  - search_decision      │                   │
-│  - setup   │  - ingest_session       │                   │
+│  - enqueue │  - search_decision      │  - queue only     │
+│  - worker  │  - ingest_session       │                   │
 └────────────┴──────────────────────────┴───────────────────┘
               │                    │                  │
               └────────────────────┼──────────────────┘
@@ -85,6 +85,12 @@ WWT (What Was That?) is a semantic search engine for AI conversation logs. It au
 ```
 
 ## Data Flow Pipeline
+
+Auto-ingest is asynchronous: hooks upsert transcript paths into
+`~/.wwt/data/queue/jobs.db` and return. A single `flock`-guarded worker waits
+15 seconds to coalesce repeated paths, keeps ONNX/ChromaDB warm for the burst,
+and exits after 120 idle seconds. Failed revisions remain durable for retry or
+inspection through `wwt queue-status`.
 
 ### 1. Input: Multiple Log Formats
 
@@ -528,4 +534,3 @@ EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 **ONNX Load Failure**: Lazy load, first query raises exception
 **No Results**: Returns empty list (client handles gracefully)
 **Stale Index**: Automatic rebuild on upsert (atomic)
-

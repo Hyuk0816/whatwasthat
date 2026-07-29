@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ def _ensure_model() -> tuple:
         return _SESSION, _TOKENIZER
 
     from huggingface_hub import snapshot_download
-    from onnxruntime import InferenceSession
+    from onnxruntime import InferenceSession, SessionOptions
     from tokenizers import Tokenizer
 
     # HuggingFace에서 ONNX 모델 다운로드 (캐시됨)
@@ -40,8 +41,14 @@ def _ensure_model() -> tuple:
             "intfloat/multilingual-e5-small에 ONNX 모델이 포함되어 있는지 확인하세요."
         )
 
+    session_options = SessionOptions()
+    configured_threads = os.environ.get("WWT_ONNX_THREADS")
+    if configured_threads is not None:
+        session_options.intra_op_num_threads = max(1, int(configured_threads))
+        session_options.inter_op_num_threads = 1
     _SESSION = InferenceSession(
         str(onnx_path),
+        sess_options=session_options,
         providers=["CPUExecutionProvider"],
     )
 

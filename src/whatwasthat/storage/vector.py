@@ -282,7 +282,7 @@ class VectorStore:
         # 4. 변경분만 upsert (임베딩은 여기서만 발생)
         if changed:
             self.upsert_chunks(changed, rebuild_bm25=rebuild_bm25)
-        elif stale_ids:
+        elif stale_ids and rebuild_bm25:
             # stale 삭제만 했으면 BM25 재구축 필요
             self._build_bm25_index()
 

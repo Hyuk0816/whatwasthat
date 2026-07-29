@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -22,9 +21,6 @@ from whatwasthat.remote.models import (
     RemoteUploadSummary,
 )
 from whatwasthat.server.mcp import (
-    _write_lock as _shared_write_lock,
-)
-from whatwasthat.server.mcp import (
     recall_chunk as _local_recall_chunk,
 )
 from whatwasthat.server.mcp import (
@@ -37,6 +33,7 @@ from whatwasthat.server.mcp import (
     search_memory as _local_search_memory,
 )
 from whatwasthat.storage.checkpoints import RemoteIngestCheckpointStore
+from whatwasthat.storage.locking import write_lock
 from whatwasthat.storage.raw_store import RawSpanStore
 from whatwasthat.storage.vector import VectorStore
 
@@ -66,18 +63,17 @@ def _session_hash(transcript_text: str) -> str:
 def _default_stores():
     config = WwtConfig()
     raw_store = RawSpanStore(config.raw_spans_path)
-    raw_store.initialize()
     vector_store = VectorStore(config.chroma_path)
-    vector_store.initialize()
     checkpoints = RemoteIngestCheckpointStore(config.data_dir / "remote" / "checkpoints.db")
-    checkpoints.initialize()
+    with write_lock(config.data_dir):
+        raw_store.initialize()
+        vector_store.initialize()
+        checkpoints.initialize()
     return checkpoints, raw_store, vector_store
 
 
-@contextmanager
 def _write_lock():
-    with _shared_write_lock():
-        yield
+    return write_lock(WwtConfig().data_dir)
 
 
 def _parse_turns_from_session(filename: str, transcript_text: str):
